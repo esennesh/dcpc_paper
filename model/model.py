@@ -17,6 +17,15 @@ class DigitPositions(BaseModel):
         prior = dist.Normal(self.mu, self.sigma).to_event(1)
         return pyro.sample("z_where_%d" % t, prior)
 
+class DigitFeatures(BaseModel):
+    def __init__(self, z_what_dim=10):
+        super().__init__()
+        self._dim = z_what_dim
+
+    def forward(self, K=3):
+        prior = dist.Normal(0, 1).expand([K, self._dim]).to_event(2)
+        return pyro.sample("z_what", prior)
+
 class MnistModel(BaseModel):
     def __init__(self, num_classes=10):
         super().__init__()
