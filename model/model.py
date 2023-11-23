@@ -4,6 +4,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel
 
+class DigitPositions(BaseModel):
+    def __init__(self, z_where_dim=2):
+        super().__init__()
+        self.mu = torch.zeros(z_where_dim)
+        self.sigma = torch.ones(z_where_dim) * 0.2
+
+    def forward(self, t, z_where=None):
+        sigma = self.sigma
+        if z_where is None:
+            sigma = sigma * 5
+        prior = dist.Normal(self.mu, self.sigma).to_event(1)
+        return pyro.sample("z_where_%d" % t, prior)
 
 class MnistModel(BaseModel):
     def __init__(self, num_classes=10):
