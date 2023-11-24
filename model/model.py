@@ -26,6 +26,41 @@ class DigitFeatures(BaseModel):
         prior = dist.Normal(0, 1).expand([K, self._dim]).to_event(2)
         return pyro.sample("z_what", prior)
 
+class DigitsDecoder(BaseModel):
+    def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10):
+        super().__init__()
+        self._digit_side = digit_side
+        self._x_side = x_side
+        self.decoder = nn.Sequential(
+            nn.Linear(z_what_dim, hidden_dim // 2), nn.ReLU(),
+            nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
+        )
+        self.scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
+        self.translate = (x_side - digit_side) / digit_side
+
+    def blit(self, digits, z_where):
+        S, B, K, _ = z_where.shape
+        affine_p1 = self.scale.repeat(S, B, K, 1, 1)
+        affine_p2 = z_where.unsqueeze(-1) * self.translate
+        affine_p2[:, :, :, 0, :] = -affine_p2[:, :, :, :, 0, :]
+        grid = affine_grid(
+            torch.cat((affine_p1, affine_p2), -1).view(S*B*K, 2, 3),
+            torch.Size((S*B*K, 1, self._x_side, self._x_side)),
+            align_corners=True
+        )
+
+        digits = digits.view(S*B*K, self._digit_side, self._digit_side)
+        frames = grid_sample(digits.unsqueeze(1), grid, mode='nearest',
+                             align_corners=True).squeeze(1)
+        return frames.view(S, B, K, self._x_side, self._x_side)
+
+    def forward(self, t, what, where, x):
+        digits = self.decoder(z_what)
+        frame = torch.clamp(self.blit(digits, z_where).sum(-2), 0., 1.)
+        likelihood = dist.ContinuousBernoulli(frame).to_event(1)
+        return pyro.sample("X_%d" % t, likelihood, obs=x)
+
 class MnistModel(BaseModel):
     def __init__(self, num_classes=10):
         super().__init__()
