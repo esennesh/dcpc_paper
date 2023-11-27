@@ -61,20 +61,21 @@ class DigitsDecoder(BaseModel):
         likelihood = dist.ContinuousBernoulli(frame).to_event(1)
         return pyro.sample("X_%d" % t, likelihood, obs=x)
 
-class MnistModel(BaseModel):
-    def __init__(self, num_classes=10):
+class BouncingMnistModel(BaseModel):
+    def __init__(self, digit_side=28, hidden_dim=400, num_classes=10,
+                 num_digits=3, x_side=96, z_what_dim=10, z_where_dim=2):
         super().__init__()
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(320, 50)
-        self.fc2 = nn.Linear(50, num_classes)
+        self._num_classes = num_classes
+        self._num_digits = num_digits
 
-    def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, 320)
-        x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+        self.decoder = DigitsDecoder(digit_side, hidden_dim, x_side, z_what_dim)
+        self.digit_features = DigitFeatures(z_what_dim)
+        self.digit_positions = DigitPositions(z_where_dim)
+
+    def forward(self, xs):
+        B, T, _, _ = xs.shape
+        z_what = self.digit_features(self._num_digits)
+        z_where = None
+        for t, x in pyro.markov(enumerate(xs.unbind(1))):
+            z_where = self.digit_positions(t, z_where)
+            self.decoder(t, z_what, z_where, x)
