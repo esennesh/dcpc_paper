@@ -1,3 +1,4 @@
+import math
 import pyro
 import pyro.distributions as dist
 import pyro.nn as pnn
@@ -10,24 +11,29 @@ from .inference import asvi, mlp_amortizer
 class DigitPositions(BaseModel):
     def __init__(self, z_where_dim=2):
         super().__init__()
-        self.mu = torch.zeros(z_where_dim)
-        self.sigma = torch.ones(z_where_dim) * 0.2
+        self.register_buffer('loc', torch.zeros(z_where_dim))
+        self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
 
-    def forward(self, t, z_where=None):
-        sigma = self.sigma
+    def forward(self, t, K=3, batch_shape=(), z_where=None):
+        scale = self.scale
         if z_where is None:
-            sigma = sigma * 5
-        prior = dist.Normal(self.mu, self.sigma).to_event(1)
-        return pyro.sample("z_where_%d" % t, prior)
+            scale = scale * 5
+        prior = dist.Normal(self.loc, scale).expand([
+            *batch_shape, K, *self.loc.shape
+        ])
+        return pyro.sample("z_where__%d" % t, prior.to_event(2))
 
 class DigitFeatures(BaseModel):
     def __init__(self, z_what_dim=10):
         super().__init__()
-        self._dim = z_what_dim
+        self.register_buffer('loc', torch.zeros(z_what_dim))
+        self.register_buffer('scale', torch.ones(z_what_dim))
 
-    def forward(self, K=3):
-        prior = dist.Normal(0, 1).expand([K, self._dim]).to_event(2)
-        return pyro.sample("z_what", prior)
+    def forward(self, K=3, batch_shape=()):
+        prior = dist.Normal(self.loc, self.scale).expand([
+            *batch_shape, K, *self.loc.shape
+        ])
+        return pyro.sample("z_what", prior.to_event(2))
 
 class DigitsDecoder(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10):
@@ -39,29 +45,31 @@ class DigitsDecoder(BaseModel):
             nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
             nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
         )
-        self.scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
+        scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
+        self.register_buffer('scale', scale)
         self.translate = (x_side - digit_side) / digit_side
 
     def blit(self, digits, z_where):
-        S, B, K, _ = z_where.shape
-        affine_p1 = self.scale.repeat(S, B, K, 1, 1)
+        P, B, K, _ = z_where.shape
+        affine_p1 = self.scale.repeat(P, B, K, 1, 1)
         affine_p2 = z_where.unsqueeze(-1) * self.translate
-        affine_p2[:, :, :, 0, :] = -affine_p2[:, :, :, :, 0, :]
-        grid = affine_grid(
-            torch.cat((affine_p1, affine_p2), -1).view(S*B*K, 2, 3),
-            torch.Size((S*B*K, 1, self._x_side, self._x_side)),
+        affine_p2[:, :, :, 0, :] = -affine_p2[:, :, :, 0, :]
+        grid = F.affine_grid(
+            torch.cat((affine_p1, affine_p2), -1).view(P*B*K, 2, 3),
+            torch.Size((P*B*K, 1, self._x_side, self._x_side)),
             align_corners=True
         )
 
-        digits = digits.view(S*B*K, self._digit_side, self._digit_side)
-        frames = grid_sample(digits.unsqueeze(1), grid, mode='nearest',
-                             align_corners=True).squeeze(1)
-        return frames.view(S, B, K, self._x_side, self._x_side)
+        digits = digits.view(P*B*K, self._digit_side, self._digit_side)
+        frames = F.grid_sample(digits.unsqueeze(1), grid, mode='nearest',
+                               align_corners=True).squeeze(1)
+        return frames.view(P, B, K, self._x_side, self._x_side)
 
     def forward(self, t, what, where, x):
-        digits = self.decoder(z_what)
-        frame = torch.clamp(self.blit(digits, z_where).sum(-2), 0., 1.)
-        likelihood = dist.ContinuousBernoulli(frame).to_event(1)
+        P, B, K, _ = where.shape
+        digits = self.decoder(what)
+        frame = torch.clamp(self.blit(digits, where).sum(-3), 0., 1.)
+        likelihood = dist.ContinuousBernoulli(frame).to_event(2)
         return pyro.sample("X_%d" % t, likelihood, obs=x)
 
 class BouncingMnistModel(BaseModel):
