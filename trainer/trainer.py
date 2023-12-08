@@ -10,10 +10,10 @@ class Trainer(BaseTrainer):
     """
     Trainer class
     """
-    def __init__(self, model, criterion, metric_ftns, optimizer, config, data_loader,
+    def __init__(self, model, metric_ftns, optimizer, config, data_loader,
                  valid_data_loader=None, lr_scheduler=None, len_epoch=None,
                  num_particles=4, jit=False):
-        super().__init__(model, criterion, metric_ftns, optimizer, config)
+        super().__init__(model, metric_ftns, optimizer, config)
         self.config = config
         self.data_loader = data_loader
         if len_epoch is None:
@@ -41,32 +41,32 @@ class Trainer(BaseTrainer):
         :return: A log that contains average loss and metric in this epoch.
         """
         if self.jit:
-            elbo = JitTraceGraph_ELBO(vectorize_particles=False,
-                                      num_particles=self.num_particles)
+            elbo = JitTraceGraph_ELBO(num_particles=self.num_particles,
+                                      max_plate_nesting=1,
+                                      vectorize_particles=True)
         else:
-            elbo = TraceGraph_ELBO(vectorize_particles=False,
-                                   num_particles=self.num_particles)
+            elbo = TraceGraph_ELBO(num_particles=self.num_particles,
+                                   max_plate_nesting=1,
+                                   vectorize_particles=True)
         svi = SVI(self.model.model, self.model.guide, self.optimizer, loss=elbo)
 
         self.model.train()
         self.train_metrics.reset()
-        for batch_idx, (data, target) in enumerate(self.data_loader):
-            data, target = data.to(self.device), target.to(self.device)
-
-            self.optimizer.zero_grad()
-            loss = svi.step(observations=data)
+        for batch_idx, data in enumerate(self.data_loader):
+            data = data.to(self.device)
+            loss = svi.step(data) / data.shape[0]
 
             self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
-            self.train_metrics.update('loss', loss.item())
+            self.train_metrics.update('loss', loss)
             for met in self.metric_ftns:
-                self.train_metrics.update(met.__name__, met(target))
+                self.train_metrics.update(met.__name__, met(data))
 
             if batch_idx % self.log_step == 0:
                 self.logger.debug('Train Epoch: {} {} Loss: {:.6f}'.format(
                     epoch,
                     self._progress(batch_idx),
-                    loss.item()))
-                self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
+                    loss))
+                # self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
             if batch_idx == self.len_epoch:
                 break
@@ -88,25 +88,27 @@ class Trainer(BaseTrainer):
         :return: A log that contains information about validation
         """
         if self.jit:
-            elbo = JitTraceGraph_ELBO(vectorize_particles=False,
-                                      num_particles=self.num_particles)
+            elbo = JitTraceGraph_ELBO(num_particles=self.num_particles,
+                                      max_plate_nesting=1,
+                                      vectorize_particles=True)
         else:
-            elbo = TraceGraph_ELBO(vectorize_particles=False,
-                                   num_particles=self.num_particles)
+            elbo = TraceGraph_ELBO(num_particles=self.num_particles,
+                                   max_plate_nesting=1,
+                                   vectorize_particles=True)
         svi = SVI(self.model.model, self.model.guide, self.optimizer, loss=elbo)
 
         self.model.eval()
         self.valid_metrics.reset()
         with torch.no_grad():
-            for batch_idx, (data, target) in enumerate(self.valid_data_loader):
-                data, target = data.to(self.device), target.to(self.device)
-                loss = svi.evaluate_loss(observations=data)
+            for batch_idx, data in enumerate(self.valid_data_loader):
+                data = data.to(self.device)
+                loss = svi.evaluate_loss(data) / data.shape[0]
 
                 self.writer.set_step((epoch - 1) * len(self.valid_data_loader) + batch_idx, 'valid')
-                self.valid_metrics.update('loss', loss.item())
+                self.valid_metrics.update('loss', loss)
                 for met in self.metric_ftns:
-                    self.valid_metrics.update(met.__name__, met(target))
-                self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
+                    self.valid_metrics.update(met.__name__, met(data))
+                # self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
         # add histogram of model parameters to the tensorboard
         for name, p in self.model.named_parameters():
