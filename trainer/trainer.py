@@ -1,4 +1,7 @@
+import functools
+import math
 import numpy as np
+import pyro
 from pyro.infer import SVI, JitTraceGraph_ELBO, TraceGraph_ELBO
 import torch
 from torchvision.utils import make_grid
@@ -109,6 +112,182 @@ class Trainer(BaseTrainer):
                 for met in self.metric_ftns:
                     self.valid_metrics.update(met.__name__, met(data))
                 # self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
+
+        # add histogram of model parameters to the tensorboard
+        for name, p in self.model.named_parameters():
+            self.writer.add_histogram(name, p, bins='auto')
+        return self.valid_metrics.result()
+
+    def _progress(self, batch_idx):
+        base = '[{}/{} ({:.0f}%)]'
+        if hasattr(self.data_loader, 'n_samples'):
+            current = batch_idx * self.data_loader.batch_size
+            total = self.data_loader.n_samples
+        else:
+            current = batch_idx
+            total = self.len_epoch
+        return base.format(current, total, 100.0 * current / total)
+
+class PpcTrainer(BaseTrainer):
+    """
+    Particle Predictive Coding (PPC) Trainer class
+    """
+    def __init__(self, model, metric_ftns, optimizer, config, data_loader,
+                 valid_data_loader=None, lr_scheduler=None, len_epoch=None,
+                 num_particles=4, num_sweeps=1):
+        super().__init__(model, metric_ftns, optimizer, config)
+        self.config = config
+        self.data_loader = data_loader
+        if len_epoch is None:
+            # epoch-based training
+            self.len_epoch = len(self.data_loader)
+        else:
+            # iteration-based training
+            self.data_loader = inf_loop(data_loader)
+            self.len_epoch = len_epoch
+        self.valid_data_loader = valid_data_loader
+        self.do_validation = self.valid_data_loader is not None
+        self.lr_scheduler = lr_scheduler
+        self.log_step = int(np.sqrt(data_loader.batch_size))
+        self.num_particles = num_particles
+        self.num_sweeps = num_sweeps
+        self._train_traces = [None] * len(self.data_loader)
+        self._valid_traces = [None] * len(self.valid_data_loader)
+
+        self.train_metrics = MetricTracker('loss', 'log_likelihood', 'log_marginal',
+                                           *[m.__name__ for m in self.metric_ftns], writer=self.writer)
+        self.valid_metrics = MetricTracker('loss', 'log_likelihood', 'log_marginal',
+                                           *[m.__name__ for m in self.metric_ftns], writer=self.writer)
+
+    def _load_inference_state(self, batch_idx, data, train=True):
+        trace = self._train_traces[batch_idx] if train\
+                else self._valid_traces[batch_idx]
+        if trace is None:
+            with pyro.plate_stack('forward', (self.num_particles, len(data))):
+                trace = pyro.poutine.trace(self.model).get_trace(data)
+        else:
+            for site in trace:
+                for key, val in trace.nodes[site].items():
+                    if isinstance(val, torch.Tensor):
+                        trace.nodes[site][key] = val.to(self.device)
+            with pyro.plate_stack('forward', (self.num_particles, len(data))):
+                with pyro.poutine.replay(trace=trace):
+                    trace = pyro.poutine.trace(self.model).get_trace(data)
+
+        trace.compute_log_prob()
+        return trace
+
+    def _save_inference_state(self, batch_idx, trace, train=True):
+        for site, msg in list(trace.nodes.items()):
+            if msg['type'] == 'sample':
+                msg['value'] = msg['value'].detach().cpu()
+
+                saving_keys = {'type', 'name', 'infer', 'is_observed', 'value'}
+                for k in set(msg.keys()) - saving_keys:
+                    del msg[k]
+            else:
+                del trace.nodes[site]
+        traces = self._train_traces if train else self._valid_traces
+        traces[batch_idx] = trace
+
+    def _ppc_step(self, i, data, grad_step=True):
+        trace = self._load_inference_state(i, data)
+        log_joint = sum(site['log_prob'] for site in trace.nodes.values()
+                        if site['type'] == 'sample')
+        loss = (-log_joint).mean()
+        if grad_step:
+            loss.backward()
+
+        with torch.no_grad():
+            log_weights = []
+            # Wasserstein-gradient updates to latent variables
+            for s in range(self.num_sweeps):
+                self.model.graph.populate(trace)
+                trace, log_proposal = self.model.graph.update_sweep()
+                with pyro.poutine.replay(trace=trace):
+                    trace = pyro.poutine.trace(self.model).get_trace(data)
+                trace.compute_log_prob()
+                log_joint = sum(site['log_prob'] for site
+                                in trace.nodes.values()
+                                if site['type'] == 'sample')
+                log_weights.append(log_joint - log_proposal)
+
+        if grad_step:
+            params = pyro.get_param_store().values()
+            self.optimizer(params)
+            pyro.infer.util.zero_grads(params)
+
+        log_likelihood = sum(site['log_prob'] for site in trace.nodes.values()
+                             if site['type'] == 'sample' and\
+                             not site['is_observed'])
+        self._save_inference_state(i, trace)
+        return loss, log_weights[-1], log_likelihood
+
+    def _train_epoch(self, epoch):
+        """
+        Training logic for an epoch
+
+        :param epoch: Integer, current training epoch.
+        :return: A log that contains average loss and metric in this epoch.
+        """
+        self.model.train()
+        self.train_metrics.reset()
+        for batch_idx, data in enumerate(self.data_loader):
+            data = data.to(self.device)
+
+            loss, log_weight, log_likelihood = self._ppc_step(batch_idx, data)
+            log_likelihood = log_likelihood.mean()
+            log_marginal = torch.logsumexp(log_weight, dim=0).mean(dim=0) -\
+                           math.log(math.prod(log_weight.shape[:2]))
+
+            self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
+            self.train_metrics.update('loss', loss.item())
+            self.train_metrics.update('log_likelihood', log_likelihood.item())
+            self.train_metrics.update('log_marginal', log_marginal.item())
+
+            if batch_idx % self.log_step == 0:
+                self.logger.debug('Train Epoch: {} {} Loss: {:.6f}'.format(
+                    epoch,
+                    self._progress(batch_idx),
+                    loss.item()))
+
+            if batch_idx == self.len_epoch:
+                break
+        log = self.train_metrics.result()
+
+        if self.do_validation:
+            val_log = self._valid_epoch(epoch)
+            log.update(**{'val_'+k : v for k, v in val_log.items()})
+
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+        return log
+
+    def _valid_epoch(self, epoch):
+        """
+        Validate after training an epoch
+
+        :param epoch: Integer, current training epoch.
+        :return: A log that contains information about validation
+        """
+        trace, log_weight = None, 0.
+
+        self.model.eval()
+        self.valid_metrics.reset()
+        with torch.no_grad():
+            for batch_idx, data in enumerate(self.valid_data_loader):
+                data = data.to(self.device)
+
+                loss, log_weight, log_likelihood = self._ppc_step(batch_idx,
+                                                                  data, False)
+                log_likelihood = log_likelihood.mean()
+                log_marginal = torch.logsumexp(log_weight, dim=0).mean(dim=0) -\
+                               math.log(math.prod(log_weight.shape[:2]))
+
+                self.writer.set_step((epoch - 1) * len(self.valid_data_loader) + batch_idx, 'valid')
+                self.valid_metrics.update('loss', loss.item())
+                self.valid_metrics.update('log_likelihood', log_likelihood.item())
+                self.valid_metrics.update('log_marginal', log_marginal.item())
 
         # add histogram of model parameters to the tensorboard
         for name, p in self.model.named_parameters():
