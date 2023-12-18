@@ -113,8 +113,8 @@ class BouncingMnistAsvi(BaseModel):
         z_what = self.digit_features(K=self._num_digits, batch_shape=(B,))
         z_where = None
         for t, x in pyro.markov(enumerate(xs.unbind(1))):
-            z_where = self.digit_positions(t, K=self._num_digits,
-                                           batch_shape=(B,), z_where=z_where)
+            z_where = self.digit_positions(z_where, t=t, K=self._num_digits,
+                                           batch_shape=(B,))
             self.decoder(t, z_what, z_where, x)
 
     def guide(self, xs):
@@ -130,6 +130,5 @@ class BouncingMnistAsvi(BaseModel):
             x = x.reshape(x.shape[0], math.prod(x.shape[1:]))
             with asvi(amortizer=self.encoders, data=x, event_shape=x.shape[1:],
                       namer=lambda n: n.split('__')[0]):
-                z_where = self.digit_positions(t, self._num_digits,
-                                               batch_shape=(B,),
-                                               z_where=z_where)
+                z_where = self.digit_positions(z_where, t=t, K=self._num_digits,
+                                               batch_shape=(B,))
