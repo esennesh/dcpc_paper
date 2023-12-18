@@ -14,7 +14,7 @@ class DigitPositions(BaseModel):
         self.register_buffer('loc', torch.zeros(z_where_dim))
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
 
-    def forward(self, t, K=3, batch_shape=(), z_where=None):
+    def forward(self, z_where, t=0, K=3, batch_shape=()):
         scale = self.scale
         if z_where is None:
             scale = scale * 5
