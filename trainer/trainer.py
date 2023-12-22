@@ -252,6 +252,8 @@ class PpcTrainer(BaseTrainer):
                     epoch,
                     self._progress(batch_idx),
                     loss.item()))
+                if len(data.shape) == 4:
+                    self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
             if batch_idx == self.len_epoch:
                 break
@@ -290,6 +292,9 @@ class PpcTrainer(BaseTrainer):
                 self.valid_metrics.update('loss', loss.item())
                 self.valid_metrics.update('log_likelihood', log_likelihood.item())
                 self.valid_metrics.update('log_marginal', log_marginal.item())
+
+                if len(data.shape) == 4:
+                    self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
         # add histogram of model parameters to the tensorboard
         for name, p in self.model.named_parameters():
