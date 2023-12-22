@@ -12,10 +12,10 @@
         "type": "MnistDataLoader",
         "args":{
             "data_dir": "data/",
+            "drop_last": false,
             "batch_size": 256,
-            "shuffle": false,
             "validation_split": 0.1,
-            "num_workers": 0
+            "num_workers": 2
         }
     },
     "optimizer": {
@@ -29,7 +29,7 @@
         }
     },
     "trainer": {
-        "epochs": 200,
+        "epochs": 100,
         "monitor": "min val_loss",
         "save_dir": "saved/",
         "save_period": 1,
