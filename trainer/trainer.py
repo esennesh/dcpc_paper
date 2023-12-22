@@ -234,7 +234,7 @@ class PpcTrainer(BaseTrainer):
         """
         self.model.train()
         self.train_metrics.reset()
-        for batch_idx, data in enumerate(self.data_loader):
+        for batch_idx, (data, target) in enumerate(self.data_loader):
             data = data.to(self.device)
 
             loss, log_weight, log_likelihood = self._ppc_step(batch_idx, data)
@@ -277,7 +277,7 @@ class PpcTrainer(BaseTrainer):
         self.model.eval()
         self.valid_metrics.reset()
         with torch.no_grad():
-            for batch_idx, data in enumerate(self.valid_data_loader):
+            for batch_idx, (data, target) in enumerate(self.valid_data_loader):
                 data = data.to(self.device)
 
                 loss, log_weight, log_likelihood = self._ppc_step(batch_idx,
