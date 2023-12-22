@@ -192,12 +192,12 @@ class PpcTrainer(BaseTrainer):
         traces = self._train_traces if train else self._valid_traces
         traces[batch_idx] = trace
 
-    def _ppc_step(self, i, data, grad_step=True):
-        trace = self._load_inference_state(i, data)
+    def _ppc_step(self, i, data, train=True):
+        trace = self._load_inference_state(i, data, train)
         log_joint = sum(site['log_prob'] for site in trace.nodes.values()
                         if site['type'] == 'sample')
         loss = (-log_joint).mean()
-        if grad_step:
+        if train:
             loss.backward()
 
         with torch.no_grad():
@@ -214,7 +214,7 @@ class PpcTrainer(BaseTrainer):
                                 if site['type'] == 'sample')
                 log_weights.append(log_joint - log_proposal)
 
-        if grad_step:
+        if train:
             params = pyro.get_param_store().values()
             self.optimizer(params)
             pyro.infer.util.zero_grads(params)
@@ -222,7 +222,7 @@ class PpcTrainer(BaseTrainer):
         log_likelihood = sum(site['log_prob'] for site in trace.nodes.values()
                              if site['type'] == 'sample' and\
                              not site['is_observed'])
-        self._save_inference_state(i, trace)
+        self._save_inference_state(i, trace, train)
         return loss, log_weights[-1], log_likelihood
 
     def _train_epoch(self, epoch):
