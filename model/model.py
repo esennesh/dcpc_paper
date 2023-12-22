@@ -150,6 +150,24 @@ class BouncingMnistAsvi(BaseModel):
                 z_where = self.digit_positions(z_where, t=t, K=self._num_digits,
                                                batch_shape=(B,))
 
+class MnistPpc(BaseModel):
+    def __init__(self, digit_side=28, hidden_dim=400, temperature=1e-3,
+                 z_dim=10):
+        super().__init__()
+        self.digit_features = DigitFeatures(z_dim)
+        self.decoder = DigitDecoder(digit_side, hidden_dim, z_dim)
+
+        self.graph = PpcGraph(temperature)
+        self.graph.add_node("z_what", [], self.digit_features)
+        self.graph.add_node("X", ["z_what"], self.decoder)
+
+    def forward(self, xs):
+        B, _, _, _ = xs.shape
+        self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
+        z = self.digit_features(K=1, batch_shape=(B,))
+        self.graph.set_kwargs("X", x=xs)
+        return self.decoder(z, x=xs)
+
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
                  temperature=1e-3, x_side=96, z_what_dim=10, z_where_dim=2):
