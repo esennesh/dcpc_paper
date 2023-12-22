@@ -72,6 +72,23 @@ class DigitsDecoder(BaseModel):
         likelihood = dist.ContinuousBernoulli(frame).to_event(2)
         return pyro.sample("X__%d" % t, likelihood, obs=x)
 
+class DigitDecoder(BaseModel):
+    def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
+        super().__init__()
+        self._digit_side = 28
+        self.decoder = nn.Sequential(
+            nn.Linear(z_dim, hidden_dim // 2), nn.ReLU(),
+            nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
+        )
+
+    def forward(self, what, x=None):
+        P, B, _, _ = what.shape
+        estimate = self.decoder(what).view(P, B, 1, self._digit_side,
+                                           self._digit_side)
+        likelihood = dist.ContinuousBernoulli(estimate).to_event(3)
+        return pyro.sample("X", likelihood, obs=x)
+
 class BouncingMnistAsvi(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
                  x_side=96, z_what_dim=10, z_where_dim=2):
