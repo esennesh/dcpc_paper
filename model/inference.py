@@ -55,12 +55,16 @@ class PpcGraph:
         self._trace = trace
         self.trace.detach_()
         self.trace.compute_log_prob()
+        self.log_prob.cache_clear()
+        self.site_errors.cache_clear()
+        self._log_complete_conditional.cache_clear()
 
     def add_node(self, site, parents, kernel):
         self._graph.add_node(site, kernel=kernel, kwargs={}, value=None)
         for parent in parents:
             self._graph.add_edge(parent, site)
 
+    @functools.cache
     def log_prob(self, site, value, *args, **kwargs):
         assert len(args) == len(list(self._graph.predecessors(site)))
         args = [self.trace.nodes[parent]['value'] if arg is None else arg for
@@ -76,6 +80,7 @@ class PpcGraph:
         trace.compute_log_prob()
         return trace.nodes[site]['log_prob']
 
+    @functools.cache
     def site_errors(self, site):
         value = self.trace.nodes[site]['value']
         parents = [self.trace.nodes[parent]['value'] for parent in
@@ -95,6 +100,7 @@ class PpcGraph:
             error = error + self.site_errors(child)[1 + site_index]
         return error
 
+    @functools.cache
     def _log_complete_conditional(self, site, value):
         parents = (None,) * len(list(self._graph.predecessors(site)))
         log_site = self.log_prob(site, value, *parents)
