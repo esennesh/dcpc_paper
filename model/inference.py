@@ -116,7 +116,8 @@ class PpcGraph:
 
         z = self.trace.nodes[site]['value']
         error = self.complete_conditional_error(site)
-        proposal = dist.Normal(z + self.temperature * error, 2*self.temperature)
+        proposal = dist.Normal(z + self.temperature * error,
+                               math.sqrt(2*self.temperature))
         proposal = proposal.to_event(self.trace.nodes[site]['fn'].event_dim)
         z_next = proposal.sample()
 
