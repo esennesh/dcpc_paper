@@ -161,8 +161,12 @@ class MnistPpc(BaseModel):
         self.graph.add_node("z_what", [], self.digit_features)
         self.graph.add_node("X", ["z_what"], self.decoder)
 
-    def forward(self, xs):
-        B, _, _, _ = xs.shape
+    def forward(self, xs=None):
+        if xs is not None:
+            B, _, _, _ = xs.shape
+        else:
+            B = 1
+
         self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
         z = self.digit_features(K=1, batch_shape=(B,))
         self.graph.set_kwargs("X", x=xs)
