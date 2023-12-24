@@ -181,7 +181,7 @@ class PpcTrainer(BaseTrainer):
 
     def _save_inference_state(self, batch_idx, trace, train=True):
         for site, msg in list(trace.nodes.items()):
-            if msg['type'] == 'sample':
+            if msg['type'] == 'sample' and not msg['is_observed']:
                 msg['value'] = msg['value'].detach().cpu()
 
                 saving_keys = {'type', 'name', 'infer', 'is_observed', 'value'}
