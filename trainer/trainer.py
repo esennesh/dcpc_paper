@@ -220,8 +220,8 @@ class PpcTrainer(BaseTrainer):
             pyro.infer.util.zero_grads(params)
 
         log_likelihood = sum(site['log_prob'] for site in trace.nodes.values()
-                             if site['type'] == 'sample' and\
-                             not site['is_observed'])
+                             if site['type'] == 'sample' and
+                             site['is_observed'])
         self._save_inference_state(i, trace, train)
         return loss, log_weights[-1], log_likelihood
 
