@@ -215,9 +215,8 @@ class PpcTrainer(BaseTrainer):
                 log_weights.append(log_joint - log_proposal)
 
         if train:
-            params = pyro.get_param_store().values()
-            self.optimizer(params)
-            pyro.infer.util.zero_grads(params)
+            self.optimizer(pyro.get_param_store().values())
+            pyro.infer.util.zero_grads(pyro.get_param_store().values())
 
         log_likelihood = sum(site['log_prob'] for site in trace.nodes.values()
                              if site['type'] == 'sample' and
