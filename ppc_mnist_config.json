@@ -5,7 +5,7 @@
     "arch": {
         "type": "MnistPpc",
         "args": {
-            "temperature": 0.001
+            "temperature": 0.01
         }
     },
     "data_loader": {
@@ -13,7 +13,7 @@
         "args":{
             "data_dir": "data/",
             "drop_last": false,
-            "batch_size": 256,
+            "batch_size": 512,
             "validation_split": 0.1,
             "num_workers": 2
         }
@@ -22,14 +22,14 @@
         "type": "Adam",
         "args": {
             "optim_args": {
-                "lr": 0.001,
+                "lr": 0.01,
                 "weight_decay": 0,
                 "amsgrad": true
             }
         }
     },
     "trainer": {
-        "epochs": 100,
+        "epochs": 200,
         "monitor": "min val_loss",
         "save_dir": "saved/",
         "save_period": 1,
