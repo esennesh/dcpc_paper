@@ -7,7 +7,7 @@ import torch
 from torchvision.utils import make_grid
 from base import BaseTrainer
 from utils import inf_loop, MetricTracker
-
+import utils
 
 class Trainer(BaseTrainer):
     """
@@ -194,8 +194,7 @@ class PpcTrainer(BaseTrainer):
 
     def _ppc_step(self, i, data, train=True):
         trace = self._load_inference_state(i, data, train)
-        log_joint = sum(site['log_prob'] for site in trace.nodes.values()
-                        if site['type'] == 'sample')
+        log_joint = utils.log_joint(trace)
         loss = (-log_joint).mean()
         if train:
             loss.backward()
@@ -209,18 +208,14 @@ class PpcTrainer(BaseTrainer):
                 with pyro.poutine.replay(trace=trace):
                     trace = pyro.poutine.trace(self.model).get_trace(data)
                 trace.compute_log_prob()
-                log_joint = sum(site['log_prob'] for site
-                                in trace.nodes.values()
-                                if site['type'] == 'sample')
+                log_joint = utils.log_joint(trace)
                 log_weights.append(log_joint - log_proposal)
 
         if train:
             self.optimizer(pyro.get_param_store().values())
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
 
-        log_likelihood = sum(site['log_prob'] for site in trace.nodes.values()
-                             if site['type'] == 'sample' and
-                             site['is_observed'])
+        log_likelihood = utils.log_likelihood(trace)
         self._save_inference_state(i, trace, train)
         return loss, log_weights[-1], log_likelihood
 
