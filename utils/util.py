@@ -4,6 +4,7 @@ import json
 import math
 import pandas as pd
 from pathlib import Path
+import pyro
 import torch
 
 def log_likelihood(trace):
@@ -16,6 +17,12 @@ def log_joint(trace):
 
 def logmeanexp(logits, dim=0, keepdim=True):
     return torch.logsumexp(logits, dim, keepdim) - math.log(logits.shape[dim])
+
+def regen_trace(model, trace, *args, **kwargs):
+    with pyro.poutine.replay(trace=trace):
+        trace = pyro.poutine.trace(model).get_trace(*args, **kwargs)
+    trace.compute_log_prob()
+    return trace
 
 def ensure_dir(dirname):
     dirname = Path(dirname)
