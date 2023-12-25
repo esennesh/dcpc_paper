@@ -1,0 +1,44 @@
+{
+    "name": "Mnist_Ppc",
+    "n_gpu": 1,
+
+    "arch": {
+        "type": "MnistPpc",
+        "args": {
+            "temperature": 0.01
+        }
+    },
+    "data_loader": {
+        "type": "MnistDataLoader",
+        "args":{
+            "data_dir": "data/",
+            "drop_last": false,
+            "batch_size": 512,
+            "validation_split": 0.1,
+            "num_workers": 2
+        }
+    },
+    "optimizer": {
+        "type": "Adam",
+        "args": {
+            "optim_args": {
+                "lr": 0.01,
+                "weight_decay": 0,
+                "amsgrad": true
+            }
+        }
+    },
+    "trainer": {
+        "epochs": 200,
+        "monitor": "min val_loss",
+        "save_dir": "saved/",
+        "save_period": 1,
+        "tensorboard": true,
+        "verbosity": 2,
+        "type": "PpcTrainer",
+        "args": {
+            "num_particles": 8,
+            "num_sweeps": 1
+        }
+    }
+}

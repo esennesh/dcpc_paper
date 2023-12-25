@@ -1,32 +1,33 @@
 import numpy as np
 from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
-from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data import SequentialSampler, Subset
 
 
 class BaseDataLoader(DataLoader):
     """
     Base class for all data loaders
     """
-    def __init__(self, dataset, batch_size, shuffle, validation_split, num_workers, collate_fn=default_collate):
+    def __init__(self, dataset, batch_size, validation_split, num_workers, collate_fn=default_collate, drop_last=False):
         self.validation_split = validation_split
-        self.shuffle = shuffle
 
         self.batch_idx = 0
         self.n_samples = len(dataset)
 
-        self.sampler, self.valid_sampler = self._split_sampler(self.validation_split)
+        self.sampler, self.valid_sampler = self._split_sampler(dataset, self.validation_split,
+                                                               batch_size, drop_last)
 
         self.init_kwargs = {
             'dataset': dataset,
             'batch_size': batch_size,
-            'shuffle': self.shuffle,
+            'drop_last': drop_last,
+            'shuffle': False,
             'collate_fn': collate_fn,
             'num_workers': num_workers
         }
         super().__init__(sampler=self.sampler, **self.init_kwargs)
 
-    def _split_sampler(self, split):
+    def _split_sampler(self, dataset, split, batch_size=1, drop_last=False):
         if split == 0.0:
             return None, None
 
@@ -45,8 +46,8 @@ class BaseDataLoader(DataLoader):
         valid_idx = idx_full[0:len_valid]
         train_idx = np.delete(idx_full, np.arange(0, len_valid))
 
-        train_sampler = SubsetRandomSampler(train_idx)
-        valid_sampler = SubsetRandomSampler(valid_idx)
+        train_sampler = SequentialSampler(Subset(dataset, train_idx))
+        valid_sampler = SequentialSampler(Subset(dataset, valid_idx))
 
         # turn off shuffle option which is mutually exclusive with sampler
         self.shuffle = False

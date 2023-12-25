@@ -8,8 +8,7 @@ import model.loss as module_loss
 import model.metric as module_metric
 import model.model as module_arch
 from parse_config import ConfigParser
-from trainer import Trainer
-
+import trainer.trainer as module_trainer
 
 # fix random seeds for reproducibility
 SEED = 123
@@ -32,10 +31,11 @@ def main(config):
     # build optimizer.
     optimizer = config.init_obj('optimizer', pyro.optim)
 
-    trainer = Trainer(model, [], optimizer, config=config,
-                      data_loader=data_loader,
-                      valid_data_loader=valid_data_loader,
-                      lr_scheduler=None)
+    # build trainer
+    trainer = config.init_obj('trainer', module_trainer, model, [], optimizer,
+                              config=config, data_loader=data_loader,
+                              valid_data_loader=valid_data_loader,
+                              lr_scheduler=None)
 
     trainer.train()
 
