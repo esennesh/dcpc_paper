@@ -13,7 +13,6 @@
         "args":{
             "data_dir": "data/",
             "batch_size": 64,
-            "shuffle": false,
             "validation_split": 0.1,
             "num_workers": 0
         }
