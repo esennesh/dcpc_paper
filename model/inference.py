@@ -76,9 +76,7 @@ class PpcGraph:
         proposal.add_node(site, **entry)
         kernel = functools.partial(self._graph.nodes[site]['kernel'],
                                    **self._graph.nodes[site]['kwargs'])
-        with pyro.poutine.replay(trace=proposal):
-            trace = pyro.poutine.trace(kernel).get_trace(*args, **kwargs)
-        trace.compute_log_prob()
+        trace = utils.regen_trace(kernel, proposal, *args, **kwargs)
         return trace.nodes[site]['log_prob']
 
     @functools.cache
@@ -113,7 +111,7 @@ class PpcGraph:
 
     def update(self, site):
         if self.trace.nodes[site]['is_observed']:
-            return (0., 0.)
+            return 0.
 
         z = self.trace.nodes[site]['value']
         error = self.complete_conditional_error(site)
@@ -127,17 +125,18 @@ class PpcGraph:
         particle_indices, log_Zcc = _resample(log_cc - log_proposal,
                                               estimate_normalizer=True)
         z_next = _ancestor_index(particle_indices, z_next)
+        log_cc = _ancestor_index(particle_indices, log_cc)
 
         self.trace.nodes[site]['value'] = z_next
-        return (log_cc, log_Zcc)
+        return log_cc - log_Zcc
 
     def update_sweep(self):
         log_proposal = 0.
         for site in self.trace.topological_sort():
             if site not in self._graph:
                 continue
-            log_cc, log_Zcc = self.update(site)
-            log_proposal = log_proposal + log_Zcc - log_cc
+            log_normalized_cc = self.update(site)
+            log_proposal = log_proposal + log_normalized_cc
         return self.trace, log_proposal
 
 def dist_params(dist: Distribution):
