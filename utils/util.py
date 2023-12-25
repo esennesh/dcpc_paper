@@ -1,9 +1,21 @@
+from collections import OrderedDict
+from itertools import repeat
 import json
+import math
 import pandas as pd
 from pathlib import Path
-from itertools import repeat
-from collections import OrderedDict
+import torch
 
+def log_likelihood(trace):
+    return sum(site['log_prob'] for site in trace.nodes.values()
+               if site['type'] == 'sample' and site['is_observed'])
+
+def log_joint(trace):
+    return sum(site['log_prob'] for site in trace.nodes.values()
+               if site['type'] == 'sample')
+
+def logmeanexp(logits, dim=0, keepdim=True):
+    return torch.logsumexp(logits, dim, keepdim) - math.log(logits.shape[dim])
 
 def ensure_dir(dirname):
     dirname = Path(dirname)

@@ -17,14 +17,15 @@ from pyro.poutine.trace_messenger import TraceMessenger
 from pyro.poutine.trace_struct import Trace
 from pyro.poutine.util import site_is_subsample
 
+import utils
+
 def _resample(log_weights, estimate_normalizer=False):
     log_weights = torch.swapaxes(log_weights, 0, -1)
     discrete = dist.Categorical(logits=log_weights)
     indices = discrete.sample(sample_shape=torch.Size([log_weights.shape[-1]]))
     if estimate_normalizer:
         log_weights = torch.swapaxes(log_weights, 0, -1)
-        log_normalizer = torch.logsumexp(log_weights, dim=0, keepdim=True) -\
-                         math.log(log_weights.shape[0])
+        log_normalizer = utils.logmeanexp(log_weights)
         return indices, log_normalizer
     return indices
 
