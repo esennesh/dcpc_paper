@@ -29,7 +29,7 @@
         }
     },
     "trainer": {
-        "epochs": 200,
+        "epochs": 100,
         "monitor": "min val_loss",
         "save_dir": "saved/",
         "save_period": 1,
@@ -37,8 +37,7 @@
         "verbosity": 2,
         "type": "PpcTrainer",
         "args": {
-            "num_particles": 8,
-            "num_sweeps": 1
+            "num_particles": 8
         }
     }
 }
