@@ -152,8 +152,8 @@ class PpcTrainer(BaseTrainer):
         self.lr_scheduler = lr_scheduler
         self.log_step = int(np.sqrt(data_loader.batch_size))
         self.num_particles = num_particles
-        self._train_traces = [(None, 0.)] * len(self.data_loader)
-        self._valid_traces = [(None, 0.)] * len(self.valid_data_loader)
+        self._train_traces = [None] * len(self.data_loader)
+        self._valid_traces = [None] * len(self.valid_data_loader)
 
         self.train_metrics = MetricTracker('loss', 'log_marginal',
                                            *[m.__name__ for m in self.metric_ftns], writer=self.writer)
@@ -161,14 +161,12 @@ class PpcTrainer(BaseTrainer):
                                            *[m.__name__ for m in self.metric_ftns], writer=self.writer)
 
     def _load_inference_state(self, batch_idx, data, train=True):
-        trace, log_weight = self._train_traces[batch_idx] if train\
-                            else self._valid_traces[batch_idx]
+        trace = self._train_traces[batch_idx] if train\
+                else self._valid_traces[batch_idx]
         if trace is None:
             with pyro.plate_stack('forward', (self.num_particles, len(data))):
                 trace = pyro.poutine.trace(self.model).get_trace(data)
             trace.compute_log_prob()
-            log_weight = utils.log_likelihood(trace) - utils.log_joint(trace)
-            log_weight = log_weight.detach()
         else:
             for site in trace:
                 for key, val in trace.nodes[site].items():
@@ -176,10 +174,9 @@ class PpcTrainer(BaseTrainer):
                         trace.nodes[site][key] = val.to(self.device)
             with pyro.plate_stack('forward', (self.num_particles, len(data))):
                 trace = utils.regen_trace(self.model, trace, data)
-        log_weight = log_weight.to(self.device)
-        return trace, log_weight
+        return trace
 
-    def _save_inference_state(self, batch_idx, trace, log_weight, train=True):
+    def _save_inference_state(self, batch_idx, trace, train=True):
         for site, msg in list(trace.nodes.items()):
             if msg['type'] == 'sample' and not msg['is_observed']:
                 msg['value'] = msg['value'].detach().cpu()
@@ -190,18 +187,18 @@ class PpcTrainer(BaseTrainer):
             else:
                 del trace.nodes[site]
         traces = self._train_traces if train else self._valid_traces
-        traces[batch_idx] = (trace, log_weight.detach().cpu())
+        traces[batch_idx] = trace
 
     def _ppc_step(self, i, data, train=True):
-        trace, log_weight = self._load_inference_state(i, data, train)
+        trace = self._load_inference_state(i, data, train)
 
         with torch.no_grad():
             # Wasserstein-gradient updates to latent variables
             self.model.graph.populate(trace)
-            trace, log_proposal = self.model.graph.update_sweep()
+            trace, log_ccs = self.model.graph.update_sweep()
         trace = utils.regen_trace(self.model, trace, data)
         log_joint = utils.log_joint(trace)
-        log_weight = log_weight + log_joint - log_proposal
+        log_weight = log_joint - log_ccs
 
         loss = (-log_weight).mean()
         if train:
@@ -209,7 +206,7 @@ class PpcTrainer(BaseTrainer):
             self.optimizer(pyro.get_param_store().values())
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
 
-        self._save_inference_state(i, trace, log_weight - log_joint, train)
+        self._save_inference_state(i, trace, train)
         return loss, log_weight
 
     def _train_epoch(self, epoch):
