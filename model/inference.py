@@ -131,13 +131,13 @@ class PpcGraph:
         return log_cc - log_Zcc
 
     def update_sweep(self):
-        log_proposal = 0.
+        log_normalized_ccs = 0.
         for site in self.trace.topological_sort():
             if site not in self._graph:
                 continue
             log_normalized_cc = self.update(site)
-            log_proposal = log_proposal + log_normalized_cc
-        return self.trace, log_proposal
+            log_normalized_ccs = log_normalized_ccs + log_normalized_cc
+        return self.trace, log_normalized_ccs
 
 def dist_params(dist: Distribution):
     return {k: v for k, v in dist.__dict__.items() if k[0] != '_'}
