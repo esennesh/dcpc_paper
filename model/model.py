@@ -23,17 +23,17 @@ class DigitPositions(MarkovKernel):
         ])
         return prior.to_event(2)
 
-class DigitFeatures(BaseModel):
+class DigitFeatures(MarkovKernel):
     def __init__(self, z_what_dim=10):
         super().__init__()
         self.register_buffer('loc', torch.zeros(z_what_dim))
         self.register_buffer('scale', torch.ones(z_what_dim))
 
-    def forward(self, K=3, batch_shape=()):
+    def forward(self, K=3, batch_shape=()) -> dist.Distribution:
         prior = dist.Normal(self.loc, self.scale).expand([
             *batch_shape, K, *self.loc.shape
         ])
-        return pyro.sample("z_what", prior.to_event(2))
+        return prior.to_event(2)
 
 class DigitsDecoder(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10):
