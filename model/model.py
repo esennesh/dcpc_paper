@@ -5,23 +5,23 @@ import pyro.nn as pnn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from base import BaseModel
+from base import BaseModel, MarkovKernel
 from .inference import asvi, mlp_amortizer, PpcGraph
 
-class DigitPositions(BaseModel):
+class DigitPositions(MarkovKernel):
     def __init__(self, z_where_dim=2):
         super().__init__()
         self.register_buffer('loc', torch.zeros(z_where_dim))
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
 
-    def forward(self, z_where, t=0, K=3, batch_shape=()):
+    def forward(self, z_where, K=3, batch_shape=()) -> dist.Distribution:
         scale = self.scale
         if z_where is None:
             scale = scale * 5
         prior = dist.Normal(self.loc, scale).expand([
             *batch_shape, K, *self.loc.shape
         ])
-        return pyro.sample("z_where__%d" % t, prior.to_event(2))
+        return prior.to_event(2)
 
 class DigitFeatures(BaseModel):
     def __init__(self, z_what_dim=10):
