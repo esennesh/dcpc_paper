@@ -71,7 +71,7 @@ class DigitsDecoder(MarkovKernel):
         frame = torch.clamp(self.blit(digits, where).sum(-3), 0., 1.)
         return dist.ContinuousBernoulli(frame).to_event(2)
 
-class DigitDecoder(BaseModel):
+class DigitDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
         super().__init__()
         self._digit_side = 28
@@ -81,12 +81,11 @@ class DigitDecoder(BaseModel):
             nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
         )
 
-    def forward(self, what, x=None):
+    def forward(self, what, x=None) -> dist.Distribution:
         P, B, _, _ = what.shape
         estimate = self.decoder(what).view(P, B, 1, self._digit_side,
                                            self._digit_side)
-        likelihood = dist.ContinuousBernoulli(estimate).to_event(3)
-        return pyro.sample("X", likelihood, obs=x)
+        return dist.ContinuousBernoulli(estimate).to_event(3)
 
 class BouncingMnistAsvi(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
