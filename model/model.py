@@ -91,6 +91,17 @@ class MnistPpc(BaseModel):
         self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
         return self.graph.forward(X=xs)
 
+    def guide(self, xs=None):
+        if xs is not None:
+            B, _, _, _ = xs.shape
+        else:
+            B = 1
+
+        self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
+        if self.graph.nodes['X']['value'] is not None:
+            return self.graph.guide()
+        return pyro.poutine.block(self.graph, hide_types=["observe"])(X=xs)
+
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
                  temperature=1e-3, x_side=96, z_what_dim=10, z_where_dim=2):
