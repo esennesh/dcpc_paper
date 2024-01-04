@@ -192,13 +192,10 @@ class PpcTrainer(BaseTrainer):
     def _ppc_step(self, i, data, train=True):
         trace = self._load_inference_state(i, data, train)
 
-        with torch.no_grad():
-            # Wasserstein-gradient updates to latent variables
-            self.model.graph.populate(trace)
-            trace, log_ccs = self.model.graph.update_sweep()
-        trace = utils.regen_trace(self.model, trace, data)
-        log_joint = utils.log_joint(trace)
-        log_weight = log_joint - log_ccs
+        # Wasserstein-gradient updates to latent variables
+        self.model.graph.populate(trace)
+        trace, log_weight = utils.importance(self.model.forward,
+                                             self.model.guide, data)
 
         loss = (-log_weight).mean()
         if train:
