@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel
 from .generative import *
-from .inference import asvi, mlp_amortizer, PpcGraph
+from .inference import asvi, mlp_amortizer, PpcGraphicalModel
 
 class BouncingMnistAsvi(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
@@ -78,7 +78,7 @@ class MnistPpc(BaseModel):
         self.digit_features = DigitFeatures(z_dim)
         self.decoder = DigitDecoder(digit_side, hidden_dim, z_dim)
 
-        self.graph = PpcGraph(temperature)
+        self.graph = PpcGraphicalModel(temperature)
         self.graph.add_node("z_what", [], self.digit_features)
         self.graph.add_node("X", ["z_what"], self.decoder)
 
@@ -89,9 +89,7 @@ class MnistPpc(BaseModel):
             B = 1
 
         self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
-        z = self.digit_features(K=1, batch_shape=(B,))
-        self.graph.set_kwargs("X", x=xs)
-        return self.decoder(z, x=xs)
+        return self.graph.forward(X=xs)
 
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
