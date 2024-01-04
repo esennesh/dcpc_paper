@@ -155,10 +155,8 @@ class PpcTrainer(BaseTrainer):
         self._train_traces = [None] * len(self.data_loader)
         self._valid_traces = [None] * len(self.valid_data_loader)
 
-        self.train_metrics = MetricTracker('loss', 'log_marginal',
-                                           *[m.__name__ for m in self.metric_ftns], writer=self.writer)
-        self.valid_metrics = MetricTracker('loss', 'log_marginal',
-                                           *[m.__name__ for m in self.metric_ftns], writer=self.writer)
+        self.train_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
+        self.valid_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
 
     def _load_inference_state(self, batch_idx, data, train=True):
         trace = self._train_traces[batch_idx] if train\
@@ -219,11 +217,11 @@ class PpcTrainer(BaseTrainer):
             data = data.to(self.device)
 
             loss, log_weight = self._ppc_step(batch_idx, data)
-            log_marginal = utils.logmeanexp(log_weight, 0, False).mean()
 
             self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
             self.train_metrics.update('loss', loss.item())
-            self.train_metrics.update('log_marginal', log_marginal.item())
+            for met in self.metric_ftns:
+                self.train_metrics.update(met.__name__, met(log_weight))
 
             if batch_idx % self.log_step == 0:
                 self.logger.debug('Train Epoch: {} {} Loss: {:.6f}'.format(
@@ -261,11 +259,11 @@ class PpcTrainer(BaseTrainer):
                 data = data.to(self.device)
 
                 loss, log_weight = self._ppc_step(batch_idx, data, False)
-                log_marginal = utils.logmeanexp(log_weight, 0, False).mean()
 
                 self.writer.set_step((epoch - 1) * len(self.valid_data_loader) + batch_idx, 'valid')
                 self.valid_metrics.update('loss', loss.item())
-                self.valid_metrics.update('log_marginal', log_marginal.item())
+                for met in self.metric_ftns:
+                    self.valid_metrics.update(met.__name__, met(log_weight))
 
                 if len(data.shape) == 4:
                     self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
