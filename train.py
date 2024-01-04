@@ -28,12 +28,15 @@ def main(config):
     model = config.init_obj('arch', module_arch)
     logger.info(model)
 
+    # get function handles of metrics
+    metrics = [getattr(module_metric, met) for met in config['metrics']]
+
     # build optimizer.
     optimizer = config.init_obj('optimizer', pyro.optim)
 
     # build trainer
-    trainer = config.init_obj('trainer', module_trainer, model, [], optimizer,
-                              config=config, data_loader=data_loader,
+    trainer = config.init_obj('trainer', module_trainer, model, metrics,
+                              optimizer, config=config, data_loader=data_loader,
                               valid_data_loader=valid_data_loader,
                               lr_scheduler=None)
 
