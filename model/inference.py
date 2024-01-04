@@ -4,6 +4,7 @@ import networkx as nx
 from typing import Callable
 
 import torch
+import torch.distributions.constraints as constraints
 from torch.distributions import biject_to, transform_to
 import torch.nn as nn
 
@@ -17,6 +18,8 @@ from pyro.poutine.trace_messenger import TraceMessenger
 from pyro.poutine.trace_struct import Trace
 from pyro.poutine.util import site_is_subsample
 
+from base import BaseModel
+from .generative import GraphicalModel
 import utils
 
 def _resample(log_weights, estimate_normalizer=False):
@@ -35,109 +38,85 @@ def _ancestor_index(indices, tensor):
         resampled_tensor.append(tensor[indices[:, b], b])
     return torch.stack(resampled_tensor, dim=1)
 
-class PpcGraph:
-    def __init__(self, temperature, trace=None):
-        self._graph = nx.DiGraph()
-        self._temperature = temperature
-        self._trace = trace
-
-    @property
-    def temperature(self):
-        return self._temperature
-
-    @property
-    def trace(self):
-        return self._trace
-
-    def set_kwargs(self, site, **kwargs):
-        self._graph.nodes[site]['kwargs'] = kwargs
+class PpcGraphicalModel(GraphicalModel):
+    def __init__(self, temperature):
+        super().__init__()
+        self.register_buffer('temperature', torch.ones(1) * temperature)
 
     def populate(self, trace):
-        self._trace = trace
-        self.trace.detach_()
-        self.trace.compute_log_prob()
-        self.log_prob.cache_clear()
-        self.site_errors.cache_clear()
-        self._log_complete_conditional.cache_clear()
+        for site in self.nodes:
+            if site in trace:
+                self.nodes[site]['is_observed'] =\
+                    trace.nodes[site]['is_observed']
+                self.update(site,  trace.nodes[site]['value'])
 
-    def add_node(self, site, parents, kernel):
-        self._graph.add_node(site, kernel=kernel, kwargs={}, value=None)
-        for parent in parents:
-            self._graph.add_edge(parent, site)
+    def update(self, site, value):
+        self.nodes[site]['value'] = value.detach()
+        self.nodes[site]['errors'] = None
 
-    @functools.cache
-    def log_prob(self, site, value, *args, **kwargs):
-        assert len(args) == len(list(self._graph.predecessors(site)))
-        args = [self.trace.nodes[parent]['value'] if arg is None else arg for
-                (arg, parent) in zip(args, self._graph.predecessors(site))]
-        proposal, entry = Trace(), self.trace.nodes[site].copy()
-        if value is not None:
-            entry['value'] = value
-        proposal.add_node(site, **entry)
-        kernel = functools.partial(self._graph.nodes[site]['kernel'],
-                                   **self._graph.nodes[site]['kwargs'])
-        trace = utils.regen_trace(kernel, proposal, *args, **kwargs)
-        return trace.nodes[site]['log_prob']
+    def _site_errors(self, site):
+        value, pvals = self.nodes[site]['value'], self.parent_vals(site)
+        def logprobsum(value, *args, **kwargs):
+            return self.log_prob(site, value, *args, **kwargs).sum()
 
-    @functools.cache
-    def site_errors(self, site):
-        value = self.trace.nodes[site]['value']
-        parents = [self.trace.nodes[parent]['value'] for parent in
-                   self._graph.predecessors(site)]
         if torch.is_floating_point(value):
-            def logprobsum(value, *args, **kwargs):
-                return self.log_prob(site, value, *args, **kwargs).sum()
             error = torch.func.grad(logprobsum,
-                                    argnums=tuple(range(1+len(parents))))
-            return error(value, *parents)
-        raise NotImplementedError("Discrete prediction errors not implemented!")
+                                    argnums=tuple(range(1+len(pvals))))
+        else:
+            raise NotImplementedError("Discrete prediction errors not implemented!")
+        return error(value, *pvals)
+
+    def site_errors(self, site):
+        if self.nodes[site]['errors'] is None:
+            self.nodes[site]['errors'] = self._site_errors(site)
+        return self.nodes[site]['errors']
 
     def complete_conditional_error(self, site):
         error = self.site_errors(site)[0]
-        for child in self._graph.successors(site):
-            site_index = list(self._graph.predecessors(child)).index(site)
+        for child in self.child_sites(site):
+            site_index = list(self.parent_sites(child)).index(site)
             error = error + self.site_errors(child)[1 + site_index]
         return error
 
-    @functools.cache
-    def _log_complete_conditional(self, site, value):
-        parents = (None,) * len(list(self._graph.predecessors(site)))
-        log_site = self.log_prob(site, value, *parents)
-        for child in self._graph.successors(site):
-            parents = [value if s == site else None for s in
-                       self._graph.predecessors(child)]
-            log_site = log_site + self.log_prob(child, None, *parents)
-        return log_site
+    def log_complete_conditional(self, site, value):
+        args = tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
+        log_sitecc = self.log_prob(site, value, *args)
+        for child in self.child_sites(site):
+            args = tuple(value if s == site else self.nodes[s]['value'] for s
+                         in self.parent_sites(child))
+            log_site = self.log_prob(child, self.nodes[child]['value'], *args)
+            log_sitecc = log_sitecc + log_site
+        return log_sitecc
 
-    def update(self, site):
-        if self.trace.nodes[site]['is_observed']:
-            return 0.
+    def propose(self, site):
+        if not self.nodes[site]['is_observed']:
+            with torch.no_grad():
+                z = self.nodes[site]['value']
+                error = self.complete_conditional_error(site)
+                proposal = dist.Normal(z + self.temperature * error,
+                                       math.sqrt(2*self.temperature))
+                proposal = proposal.to_event(self.nodes[site]['event_dim'])
+                z_next = proposal.sample()
 
-        z = self.trace.nodes[site]['value']
-        error = self.complete_conditional_error(site)
-        proposal = dist.Normal(z + self.temperature * error,
-                               math.sqrt(2*self.temperature))
-        proposal = proposal.to_event(self.trace.nodes[site]['fn'].event_dim)
-        z_next = proposal.sample()
+                log_cc = self.log_complete_conditional(site, z_next)
+                log_proposal = proposal.log_prob(z_next)
+                particle_indices, log_Zcc = _resample(log_cc - log_proposal,
+                                                      estimate_normalizer=True)
+                z_next = _ancestor_index(particle_indices, z_next)
+                log_cc = _ancestor_index(particle_indices, log_cc)
+                smc_delta = dist.Delta(z_next, log_cc - log_Zcc,
+                                       event_dim=self.nodes[site]['event_dim'])
+                self.update(site, pyro.sample(site, smc_delta))
+        return self.nodes[site]['value']
 
-        log_cc = self._log_complete_conditional(site, z_next)
-        log_proposal = proposal.log_prob(z_next)
-        particle_indices, log_Zcc = _resample(log_cc - log_proposal,
-                                              estimate_normalizer=True)
-        z_next = _ancestor_index(particle_indices, z_next)
-        log_cc = _ancestor_index(particle_indices, log_cc)
-
-        self.trace.nodes[site]['value'] = z_next
-        return log_cc - log_Zcc
-
-    def update_sweep(self):
-        log_normalized_ccs = 0.
-        for site in self.trace.topological_sort():
-            if site not in self._graph:
-                continue
-            log_normalized_cc = self.update(site)
-            log_normalized_ccs = log_normalized_ccs + log_normalized_cc
-        return self.trace, log_normalized_ccs
+    def guide(self):
+        results = []
+        sweep = reversed(list(nx.lexicographical_topological_sort(self._graph)))
+        for site in sweep:
+            value = self.propose(site)
+            if len(list(self.child_sites(site))) == 0:
+                results.append(value)
+        return results[0] if len(results) == 1 else tuple(results)
 
 def dist_params(dist: Distribution):
     return {k: v for k, v in dist.__dict__.items() if k[0] != '_'}
