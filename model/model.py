@@ -35,7 +35,7 @@ class DigitFeatures(MarkovKernel):
         ])
         return prior.to_event(2)
 
-class DigitsDecoder(BaseModel):
+class DigitsDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10):
         super().__init__()
         self._digit_side = digit_side
@@ -65,12 +65,11 @@ class DigitsDecoder(BaseModel):
                                align_corners=True).squeeze(1)
         return frames.view(P, B, K, self._x_side, self._x_side)
 
-    def forward(self, what, where, t=0, x=None):
+    def forward(self, what, where) -> dist.Distribution:
         P, B, K, _ = where.shape
         digits = self.decoder(what)
         frame = torch.clamp(self.blit(digits, where).sum(-3), 0., 1.)
-        likelihood = dist.ContinuousBernoulli(frame).to_event(2)
-        return pyro.sample("X__%d" % t, likelihood, obs=x)
+        return dist.ContinuousBernoulli(frame).to_event(2)
 
 class DigitDecoder(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
