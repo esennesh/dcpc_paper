@@ -69,7 +69,7 @@ class Trainer(BaseTrainer):
                     epoch,
                     self._progress(batch_idx),
                     loss))
-                if len(data.shape) == 4:
+                if data.shape[1] == 1:
                     self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
             if batch_idx == self.len_epoch:
@@ -112,7 +112,7 @@ class Trainer(BaseTrainer):
                 self.valid_metrics.update('loss', loss)
                 for met in self.metric_ftns:
                     self.valid_metrics.update(met.__name__, met(data))
-                if len(data.shape) == 4:
+                if data.shape[1] == 1:
                     self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
         # add histogram of model parameters to the tensorboard
