@@ -48,12 +48,15 @@ class BouncingMnistAsvi(BaseModel):
 
     def model(self, xs):
         B, T, _, _ = xs.shape
-        z_what = self.digit_features(K=self._num_digits, batch_shape=(B,))
+        pz_what = self.digit_features(K=self._num_digits, batch_shape=(B,))
+        z_what = pyro.sample("z_what", pz_what)
         z_where = None
         for t, x in pyro.markov(enumerate(xs.unbind(1))):
-            z_where = self.digit_positions(z_where, t=t, K=self._num_digits,
-                                           batch_shape=(B,))
-            self.decoder(t, z_what, z_where, x)
+            pz_where = self.digit_positions(z_where, K=self._num_digits,
+                                            batch_shape=(B,))
+            z_where = pyro.sample("z_where__%d" % t, pz_where)
+            px = self.decoder(z_what, z_where)
+            pyro.sample("X__%d" % t, px, obs=x)
 
     def guide(self, xs):
         B, T, _, _ = xs.shape
@@ -61,15 +64,17 @@ class BouncingMnistAsvi(BaseModel):
         data = xs.reshape(xs.shape[0], math.prod(xs.shape[1:]))
         with asvi(amortizer=self.encoders, data=data, event_shape=xs.shape[1:],
                   namer=lambda n: n.split('__')[0]):
-            self.digit_features(self._num_digits, batch_shape=(B,))
+            pz_what = self.digit_features(self._num_digits, batch_shape=(B,))
+            pyro.sample("z_what", pz_what)
 
         z_where = None
         for t, x in pyro.markov(enumerate(xs.unbind(1))):
             x = x.reshape(x.shape[0], math.prod(x.shape[1:]))
             with asvi(amortizer=self.encoders, data=x, event_shape=x.shape[1:],
                       namer=lambda n: n.split('__')[0]):
-                z_where = self.digit_positions(z_where, t=t, K=self._num_digits,
-                                               batch_shape=(B,))
+                pz_where = self.digit_positions(z_where, K=self._num_digits,
+                                                batch_shape=(B,))
+                z_where = pyro.sample('z_where__%d' % t, pz_where)
 
 class MnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, temperature=1e-3,
