@@ -170,8 +170,6 @@ class PpcTrainer(BaseTrainer):
                 for key, val in trace.nodes[site].items():
                     if isinstance(val, torch.Tensor):
                         trace.nodes[site][key] = val.to(self.device)
-            with pyro.plate_stack('forward', (self.num_particles, len(data))):
-                trace = utils.regen_trace(self.model, trace, data)
         return trace
 
     def _save_inference_state(self, batch_idx, trace, train=True):
