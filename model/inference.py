@@ -1,7 +1,7 @@
 import functools
 import math
 import networkx as nx
-from typing import Callable
+from typing import Callable, Sequence
 
 import torch
 import torch.distributions.constraints as constraints
@@ -37,6 +37,44 @@ def _ancestor_index(indices, tensor):
     for b in range(indices.shape[1]):
         resampled_tensor.append(tensor[indices[:, b], b])
     return torch.stack(resampled_tensor, dim=1)
+
+class ParticleDict(nn.ParameterDict):
+    def __init__(self, num_data, num_particles, batch_dim=1, particle_dim=0):
+        super().__init__()
+        self._batch_dim = batch_dim
+        self._num_data = num_data
+        self._num_particles = num_particles
+        self._particle_dim = 0
+
+    @property
+    def num_data(self):
+        return self._num_data
+
+    @property
+    def num_particles(self):
+        return self._num_particles
+
+    def get_particles(self, key: str, idx: Sequence[int]) -> torch.Tensor:
+        val = self[key]
+        assert val.shape[self._batch_dim] == self.num_data
+        assert val.shape[self._particle_dim] == self.num_particles
+        return torch.index_select(val, self._batch_dim, torch.LongTensor(idx))
+
+    def set_particles(self, key: str, idx: Sequence[int], val: torch.Tensor):
+        assert val.shape[self._particle_dim] == self.num_particles
+        if key not in self:
+            shape = list(val.shape)
+            shape[self._batch_dim] = self.num_data
+            self[key] = torch.zeros(*shape)
+        with torch.no_grad():
+            particles = self[key].swapdims(0, self._particle_dim)
+            val = val.swapdims(0, self._particle_dim)
+            particles = particles.swapdims(1, self._batch_dim)
+            val = val.swapdims(1, self._batch_dim)
+            particles[:, idx] = val.to(device=particles.device)
+            particles = particles.swapdims(1, self._batch_dim)
+            particles = particles.swapdims(0, self._particle_dim)
+            self[key] = particles
 
 class PpcGraphicalModel(GraphicalModel):
     def __init__(self, temperature):
