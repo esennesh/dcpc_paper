@@ -148,5 +148,5 @@ class BouncingMnistPpc(BaseModel):
         for t, x in enumerate(xs.unbind(1)):
             self.graph.set_kwargs("z_where__%d" % t, K=self._num_digits,
                                   batch_shape=(B,))
-            self.graph.update("X__%d" % t, xs[:, t])
+            self.graph.clamp("X__%d" % t, xs[:, t])
         return self.graph.guide()
