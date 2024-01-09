@@ -81,16 +81,13 @@ class PpcGraphicalModel(GraphicalModel):
         super().__init__()
         self.register_buffer('temperature', torch.ones(1) * temperature)
 
-    def populate(self, trace):
-        for site in self.nodes:
-            if site in trace:
-                self.nodes[site]['is_observed'] =\
-                    trace.nodes[site]['is_observed']
-                self.update(site,  trace.nodes[site]['value'])
-
     def update(self, site, value):
         self.nodes[site]['value'] = value.detach()
         self.nodes[site]['errors'] = None
+
+    def clamp(self, site, value):
+        self.update(site, value)
+        self.nodes[site]['is_observed'] = True
 
     def _site_errors(self, site):
         value, pvals = self.nodes[site]['value'], self.parent_vals(site)
