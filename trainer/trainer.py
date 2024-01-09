@@ -6,6 +6,7 @@ from pyro.infer import SVI, JitTraceGraph_ELBO, TraceGraph_ELBO
 import torch
 from torchvision.utils import make_grid
 from base import BaseTrainer
+from model.inference import ParticleDict
 from utils import inf_loop, MetricTracker
 import utils
 
@@ -134,10 +135,11 @@ class PpcTrainer(BaseTrainer):
     """
     Particle Predictive Coding (PPC) Trainer class
     """
-    def __init__(self, model, metric_ftns, optimizer, config, data_loader,
-                 valid_data_loader=None, lr_scheduler=None, len_epoch=None,
-                 num_particles=4):
+    def __init__(self, model, metric_ftns, optimizer, config,
+                 data_loader, valid_data_loader=None, lr_scheduler=None,
+                 len_epoch=None, num_particles=4):
         super().__init__(model, metric_ftns, optimizer, config)
+
         self.config = config
         self.data_loader = data_loader
         if len_epoch is None:
@@ -152,46 +154,44 @@ class PpcTrainer(BaseTrainer):
         self.lr_scheduler = lr_scheduler
         self.log_step = int(np.sqrt(data_loader.batch_size))
         self.num_particles = num_particles
-        self._train_traces = [None] * len(self.data_loader)
-        self._valid_traces = [None] * len(self.valid_data_loader)
+        self.train_particles = ParticleDict(len(self.data_loader.dataset),
+                                            num_particles)
+        self.valid_particles = ParticleDict(len(self.valid_data_loader.dataset),
+                                            num_particles)
 
         self.train_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
         self.valid_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
 
-    def _load_inference_state(self, batch_idx, data, train=True):
-        trace = self._train_traces[batch_idx] if train\
-                else self._valid_traces[batch_idx]
-        if trace is None:
-            with pyro.plate_stack('forward', (self.num_particles, len(data))):
-                trace = pyro.poutine.trace(self.model).get_trace(data)
-            trace.compute_log_prob()
-        else:
-            for site in trace:
-                for key, val in trace.nodes[site].items():
-                    if isinstance(val, torch.Tensor):
-                        trace.nodes[site][key] = val.to(self.device)
-        return trace
+    def _initialize_particles(self, batch_idx, data, train=True):
+        data_loader = self.data_loader if train else self.valid_data_loader
+        with pyro.plate_stack("initialize", (self.num_particles, len(data))):
+            trace = pyro.poutine.trace(self.model.forward).get_trace(data)
+        batch_start = batch_idx * data_loader.batch_size
+        batch_indices = range(batch_start, batch_start + len(data))
+        self._save_particles(batch_indices, trace, train)
 
-    def _save_inference_state(self, batch_idx, trace, train=True):
-        for site, msg in list(trace.nodes.items()):
-            if msg['type'] == 'sample' and not msg['is_observed']:
-                msg['value'] = msg['value'].detach().cpu()
+    def _load_particles(self, batch_indices, train=True):
+        particles = self.train_particles if train else self.valid_particles
+        for site in particles:
+            value = particles.get_particles(site, batch_indices)
+            self.model.graph.update(site, value.to(self.device))
 
-                saving_keys = {'type', 'name', 'infer', 'is_observed', 'value'}
-                for k in set(msg.keys()) - saving_keys:
-                    del msg[k]
-            else:
-                del trace.nodes[site]
-        traces = self._train_traces if train else self._valid_traces
-        traces[batch_idx] = trace
+    def _save_particles(self, batch_indices, trace, train=True):
+        particles = self.train_particles if train else self.valid_particles
+        for site in trace.stochastic_nodes:
+            particles.set_particles(site, batch_indices,
+                                    trace.nodes[site]['value'].detach())
 
-    def _ppc_step(self, i, data, train=True):
-        trace = self._load_inference_state(i, data, train)
+    def _ppc_step(self, batch_idx, data, train=True):
+        data_loader = self.data_loader if train else self.valid_data_loader
+        batch_start = batch_idx * data_loader.batch_size
+        batch_indices = range(batch_start, batch_start + len(data))
+        self._load_particles(batch_indices, train)
 
         # Wasserstein-gradient updates to latent variables
-        self.model.graph.populate(trace)
-        trace, log_weight = utils.importance(self.model.forward,
-                                             self.model.guide, data)
+        with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
+            trace, log_weight = utils.importance(self.model.forward,
+                                                 self.model.guide, data)
 
         loss = (-log_weight).mean()
         if train:
@@ -199,8 +199,20 @@ class PpcTrainer(BaseTrainer):
             self.optimizer(pyro.get_param_store().values())
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
 
-        self._save_inference_state(i, trace, train)
+        self._save_particles(batch_indices, trace, train)
         return loss, log_weight
+
+    def train(self):
+        for batch_idx, (data, target) in enumerate(self.data_loader):
+            data = data.to(self.device)
+            self._initialize_particles(batch_idx, data)
+            self.logger.debug("Initialize particles: train batch {}".format(batch_idx))
+
+        for batch_idx, (data, target) in enumerate(self.valid_data_loader):
+            data = data.to(self.device)
+            self._initialize_particles(batch_idx, data, False)
+            self.logger.debug("Initialize particles: valid batch {}".format(batch_idx))
+        super().train()
 
     def _train_epoch(self, epoch):
         """
@@ -280,3 +292,58 @@ class PpcTrainer(BaseTrainer):
             current = batch_idx
             total = self.len_epoch
         return base.format(current, total, 100.0 * current / total)
+
+    def _save_checkpoint(self, epoch, save_best=False):
+        """
+        Saving checkpoints
+
+        :param epoch: current epoch number
+        :param log: logging information of the epoch
+        :param save_best: if True, rename the saved checkpoint to 'model_best.pth'
+        """
+        arch = type(self.model).__name__
+        state = {
+            'arch': arch,
+            'epoch': epoch,
+            'state_dict': self.model.state_dict(),
+            'train_particles': self.train_particles.state_dict(),
+            'valid_particles': self.valid_particles.state_dict(),
+            'monitor_best': self.mnt_best,
+            'config': self.config
+        }
+        filename = str(self.checkpoint_dir / 'checkpoint-epoch{}.pth'.format(epoch))
+        torch.save(state, filename)
+        self.logger.info("Saving checkpoint: {} ...".format(filename))
+        if save_best:
+            best_path = str(self.checkpoint_dir / 'model_best.pth')
+            torch.save(state, best_path)
+            self.logger.info("Saving current best: model_best.pth ...")
+
+    def _resume_checkpoint(self, resume_path):
+        """
+        Resume from saved checkpoints
+
+        :param resume_path: Checkpoint path to be resumed
+        """
+        resume_path = str(resume_path)
+        self.logger.info("Loading checkpoint: {} ...".format(resume_path))
+        checkpoint = torch.load(resume_path)
+        self.start_epoch = checkpoint['epoch'] + 1
+        self.mnt_best = checkpoint['monitor_best']
+
+        # load architecture params from checkpoint.
+        if checkpoint['config']['arch'] != self.config['arch']:
+            self.logger.warning("Warning: Architecture configuration given in config file is different from that of "
+                                "checkpoint. This may yield an exception while state_dict is being loaded.")
+        self.model.load_state_dict(checkpoint['state_dict'])
+        self.train_particles.load_state_dict(checkpoint['train_particles'])
+        self.valid_particles.load_state_dict(checkpoint['valid_particles'])
+
+        # load optimizer state from checkpoint only when optimizer type is not changed.
+        if checkpoint['config']['optimizer']['type'] != self.config['optimizer']['type']:
+            self.logger.warning("Warning: Optimizer type given in config file is different from that of checkpoint. "
+                                "Optimizer parameters not being resumed.")
+        else:
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+        self.logger.info("Checkpoint loaded. Resume training from epoch {}".format(self.start_epoch))
