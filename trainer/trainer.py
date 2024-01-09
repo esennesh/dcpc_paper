@@ -162,6 +162,16 @@ class PpcTrainer(BaseTrainer):
         self.train_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
         self.valid_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
 
+        for batch_idx, (data, target) in enumerate(self.data_loader):
+            data = data.to(self.device)
+            self._initialize_particles(batch_idx, data)
+            self.logger.debug("Initialize particles: train batch {}".format(batch_idx))
+
+        for batch_idx, (data, target) in enumerate(self.valid_data_loader):
+            data = data.to(self.device)
+            self._initialize_particles(batch_idx, data, False)
+            self.logger.debug("Initialize particles: valid batch {}".format(batch_idx))
+
     def _initialize_particles(self, batch_idx, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
         with pyro.plate_stack("initialize", (self.num_particles, len(data))):
@@ -201,18 +211,6 @@ class PpcTrainer(BaseTrainer):
 
         self._save_particles(batch_indices, trace, train)
         return loss, log_weight
-
-    def train(self):
-        for batch_idx, (data, target) in enumerate(self.data_loader):
-            data = data.to(self.device)
-            self._initialize_particles(batch_idx, data)
-            self.logger.debug("Initialize particles: train batch {}".format(batch_idx))
-
-        for batch_idx, (data, target) in enumerate(self.valid_data_loader):
-            data = data.to(self.device)
-            self._initialize_particles(batch_idx, data, False)
-            self.logger.debug("Initialize particles: valid batch {}".format(batch_idx))
-        super().train()
 
     def _train_epoch(self, epoch):
         """
@@ -338,12 +336,5 @@ class PpcTrainer(BaseTrainer):
         self.model.load_state_dict(checkpoint['state_dict'])
         self.train_particles.load_state_dict(checkpoint['train_particles'])
         self.valid_particles.load_state_dict(checkpoint['valid_particles'])
-
-        # load optimizer state from checkpoint only when optimizer type is not changed.
-        if checkpoint['config']['optimizer']['type'] != self.config['optimizer']['type']:
-            self.logger.warning("Warning: Optimizer type given in config file is different from that of checkpoint. "
-                                "Optimizer parameters not being resumed.")
-        else:
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
 
         self.logger.info("Checkpoint loaded. Resume training from epoch {}".format(self.start_epoch))
