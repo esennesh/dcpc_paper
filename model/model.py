@@ -103,9 +103,8 @@ class MnistPpc(BaseModel):
             B = 1
 
         self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
-        if self.graph.nodes['X']['value'] is not None:
-            return self.graph.guide()
-        return pyro.poutine.block(self.graph, hide_types=["observe"])(X=xs)
+        self.graph.clamp("X", xs)
+        return self.graph.guide()
 
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
