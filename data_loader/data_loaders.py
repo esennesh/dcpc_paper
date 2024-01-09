@@ -29,7 +29,7 @@ class BouncingMNIST(datasets.VisionDataset):
         if self.transform is not None:
             imgs = self.transform(imgs.swapaxes(0, -1))
 
-        return (imgs, None)
+        return (imgs, 0)
 
     def __len__(self):
         return len(self.data)

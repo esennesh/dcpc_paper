@@ -18,6 +18,14 @@ def log_joint(trace):
 def logmeanexp(logits, dim=0, keepdim=True):
     return torch.logsumexp(logits, dim, keepdim) - math.log(logits.shape[dim])
 
+def importance(model, guide, *args, **kwargs):
+    tq = pyro.poutine.trace(guide).get_trace(*args, **kwargs)
+    with pyro.poutine.replay(trace=tq):
+        tp = pyro.poutine.trace(model).get_trace(*args, **kwargs)
+    tq.compute_log_prob()
+    tp.compute_log_prob()
+    return tp, log_joint(tp) - log_joint(tq)
+
 def regen_trace(model, trace, *args, **kwargs):
     with pyro.poutine.replay(trace=trace):
         trace = pyro.poutine.trace(model).get_trace(*args, **kwargs)

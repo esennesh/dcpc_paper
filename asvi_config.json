@@ -11,7 +11,6 @@
         "args":{
             "data_dir": "data/",
             "batch_size": 64,
-            "shuffle": true,
             "validation_split": 0.1,
             "num_workers": 0
         }
@@ -26,13 +25,16 @@
             }
         }
     },
+    "metrics": ["ess", "log_marginal"],
     "trainer": {
         "epochs": 1000,
         "num_particles": 8,
 
         "save_dir": "saved/",
-        "save_period": 1,
+        "save_period": 100,
         "verbosity": 2,
+        "type": "Trainer",
+        "args": {},
 
         "monitor": "min val_loss",
         "early_stop": 50,

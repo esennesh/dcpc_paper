@@ -55,7 +55,7 @@ class Trainer(BaseTrainer):
 
         self.model.train()
         self.train_metrics.reset()
-        for batch_idx, data in enumerate(self.data_loader):
+        for batch_idx, (data, target) in enumerate(self.data_loader):
             data = data.to(self.device)
             loss = svi.step(data) / data.shape[0]
 
@@ -69,7 +69,7 @@ class Trainer(BaseTrainer):
                     epoch,
                     self._progress(batch_idx),
                     loss))
-                if len(data.shape) == 4:
+                if data.shape[1] == 1:
                     self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
             if batch_idx == self.len_epoch:
@@ -104,7 +104,7 @@ class Trainer(BaseTrainer):
         self.model.eval()
         self.valid_metrics.reset()
         with torch.no_grad():
-            for batch_idx, data in enumerate(self.valid_data_loader):
+            for batch_idx, (data, target) in enumerate(self.valid_data_loader):
                 data = data.to(self.device)
                 loss = svi.evaluate_loss(data) / data.shape[0]
 
@@ -112,7 +112,7 @@ class Trainer(BaseTrainer):
                 self.valid_metrics.update('loss', loss)
                 for met in self.metric_ftns:
                     self.valid_metrics.update(met.__name__, met(data))
-                if len(data.shape) == 4:
+                if data.shape[1] == 1:
                     self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
         # add histogram of model parameters to the tensorboard
@@ -155,10 +155,8 @@ class PpcTrainer(BaseTrainer):
         self._train_traces = [None] * len(self.data_loader)
         self._valid_traces = [None] * len(self.valid_data_loader)
 
-        self.train_metrics = MetricTracker('loss', 'log_marginal',
-                                           *[m.__name__ for m in self.metric_ftns], writer=self.writer)
-        self.valid_metrics = MetricTracker('loss', 'log_marginal',
-                                           *[m.__name__ for m in self.metric_ftns], writer=self.writer)
+        self.train_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
+        self.valid_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
 
     def _load_inference_state(self, batch_idx, data, train=True):
         trace = self._train_traces[batch_idx] if train\
@@ -172,8 +170,6 @@ class PpcTrainer(BaseTrainer):
                 for key, val in trace.nodes[site].items():
                     if isinstance(val, torch.Tensor):
                         trace.nodes[site][key] = val.to(self.device)
-            with pyro.plate_stack('forward', (self.num_particles, len(data))):
-                trace = utils.regen_trace(self.model, trace, data)
         return trace
 
     def _save_inference_state(self, batch_idx, trace, train=True):
@@ -192,13 +188,10 @@ class PpcTrainer(BaseTrainer):
     def _ppc_step(self, i, data, train=True):
         trace = self._load_inference_state(i, data, train)
 
-        with torch.no_grad():
-            # Wasserstein-gradient updates to latent variables
-            self.model.graph.populate(trace)
-            trace, log_ccs = self.model.graph.update_sweep()
-        trace = utils.regen_trace(self.model, trace, data)
-        log_joint = utils.log_joint(trace)
-        log_weight = log_joint - log_ccs
+        # Wasserstein-gradient updates to latent variables
+        self.model.graph.populate(trace)
+        trace, log_weight = utils.importance(self.model.forward,
+                                             self.model.guide, data)
 
         loss = (-log_weight).mean()
         if train:
@@ -222,18 +215,18 @@ class PpcTrainer(BaseTrainer):
             data = data.to(self.device)
 
             loss, log_weight = self._ppc_step(batch_idx, data)
-            log_marginal = utils.logmeanexp(log_weight, 0, False).mean()
 
             self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
             self.train_metrics.update('loss', loss.item())
-            self.train_metrics.update('log_marginal', log_marginal.item())
+            for met in self.metric_ftns:
+                self.train_metrics.update(met.__name__, met(log_weight))
 
             if batch_idx % self.log_step == 0:
                 self.logger.debug('Train Epoch: {} {} Loss: {:.6f}'.format(
                     epoch,
                     self._progress(batch_idx),
                     loss.item()))
-                if len(data.shape) == 4:
+                if data.shape[1] == 1:
                     self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
             if batch_idx == self.len_epoch:
@@ -264,13 +257,13 @@ class PpcTrainer(BaseTrainer):
                 data = data.to(self.device)
 
                 loss, log_weight = self._ppc_step(batch_idx, data, False)
-                log_marginal = utils.logmeanexp(log_weight, 0, False).mean()
 
                 self.writer.set_step((epoch - 1) * len(self.valid_data_loader) + batch_idx, 'valid')
                 self.valid_metrics.update('loss', loss.item())
-                self.valid_metrics.update('log_marginal', log_marginal.item())
+                for met in self.metric_ftns:
+                    self.valid_metrics.update(met.__name__, met(log_weight))
 
-                if len(data.shape) == 4:
+                if data.shape[1] == 1:
                     self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
         # add histogram of model parameters to the tensorboard
