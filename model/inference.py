@@ -81,6 +81,12 @@ class PpcGraphicalModel(GraphicalModel):
         super().__init__()
         self.register_buffer('temperature', torch.ones(1) * temperature)
 
+    def clear(self):
+        for site in self.nodes:
+            self.nodes[site]['value'] = None
+            self.nodes[site]['errors'] = None
+            self.nodes[site]['is_observed'] = False
+
     def update(self, site, value):
         self.nodes[site]['value'] = value.detach()
         self.nodes[site]['errors'] = None
