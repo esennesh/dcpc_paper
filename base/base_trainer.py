@@ -12,9 +12,8 @@ class BaseTrainer:
         self.config = config
         self.logger = config.get_logger('trainer', config['trainer']['verbosity'])
 
-        # setup GPU device if available, move model into configured device
-        self.device, device_ids = self._prepare_device(config['n_gpu'])
-        self.model = model.to(self.device)
+        self.model = model
+        device_ids = self.cuda()
         if len(device_ids) > 1:
             self.model = torch.nn.DataParallel(model, device_ids=device_ids)
 
@@ -41,11 +40,22 @@ class BaseTrainer:
 
         self.checkpoint_dir = config.save_dir
 
-        # setup visualization writer instance                
+        # setup visualization writer instance
         self.writer = TensorboardWriter(config.log_dir, self.logger, cfg_trainer['tensorboard'])
 
         if config.resume is not None:
             self._resume_checkpoint(config.resume)
+
+    def cpu(self):
+        self.device, device_ids = "cpu", []
+        self.model = self.model.to(self.device)
+        return device_ids
+
+    def cuda(self):
+        # setup GPU device if available, move model into configured device
+        self.device, device_ids = self._prepare_device(self.config['n_gpu'])
+        self.model = self.model.to(self.device)
+        return device_ids
 
     @abstractmethod
     def _train_epoch(self, epoch):
