@@ -37,7 +37,7 @@
         "args": {},
 
         "monitor": "min val_loss",
-        "early_stop": 50,
+        "early_stop": 500,
 
         "tensorboard": true
     }
