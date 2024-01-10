@@ -166,11 +166,13 @@ class PpcTrainer(BaseTrainer):
             data = data.to(self.device)
             self._initialize_particles(batch_idx, data)
             self.logger.debug("Initialize particles: train batch {}".format(batch_idx))
+        self.model.graph.clear()
 
         for batch_idx, (data, target) in enumerate(self.valid_data_loader):
             data = data.to(self.device)
             self._initialize_particles(batch_idx, data, False)
             self.logger.debug("Initialize particles: valid batch {}".format(batch_idx))
+        self.model.graph.clear()
 
     def _initialize_particles(self, batch_idx, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
