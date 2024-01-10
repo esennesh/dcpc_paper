@@ -99,11 +99,11 @@ class MnistPpc(BaseModel):
     def guide(self, xs=None):
         if xs is not None:
             B, _, _, _ = xs.shape
+            self.graph.clamp("X", xs)
         else:
             B = 1
 
         self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
-        self.graph.clamp("X", xs)
         return self.graph.guide()
 
 class BouncingMnistPpc(BaseModel):
