@@ -154,9 +154,9 @@ class PpcTrainer(BaseTrainer):
         self.lr_scheduler = lr_scheduler
         self.log_step = int(np.sqrt(data_loader.batch_size))
         self.num_particles = num_particles
-        self.train_particles = ParticleDict(len(self.data_loader.dataset),
+        self.train_particles = ParticleDict(len(self.data_loader.sampler),
                                             num_particles)
-        self.valid_particles = ParticleDict(len(self.valid_data_loader.dataset),
+        self.valid_particles = ParticleDict(len(self.valid_data_loader.sampler),
                                             num_particles)
 
         self.train_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
