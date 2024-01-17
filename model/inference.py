@@ -90,6 +90,8 @@ class PpcGraphicalModel(GraphicalModel):
     def update(self, site, value):
         self.nodes[site]['value'] = value.detach()
         self.nodes[site]['errors'] = None
+        for child in self.child_sites(site):
+            self.nodes[child]['errors'] = None
 
     def clamp(self, site, value):
         self.update(site, value)
