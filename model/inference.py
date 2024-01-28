@@ -33,10 +33,9 @@ def _resample(log_weights, estimate_normalizer=False):
     return indices
 
 def _ancestor_index(indices, tensor):
-    resampled_tensor = []
-    for b in range(indices.shape[1]):
-        resampled_tensor.append(tensor[indices[:, b], b])
-    return torch.stack(resampled_tensor, dim=1)
+    return torch.stack([t[i] for (t, i) in
+                        zip(tensor.unbind(dim=1), indices.unbind(dim=1))],
+                       dim=1)
 
 class ParticleDict(nn.ParameterDict):
     def __init__(self, num_data, num_particles, batch_dim=1, particle_dim=0):
