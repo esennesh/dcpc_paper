@@ -154,8 +154,7 @@ class PpcGraphicalModel(GraphicalModel):
 
     def guide(self):
         results = []
-        sweep = reversed(list(nx.lexicographical_topological_sort(self._graph)))
-        for site in sweep:
+        for site in self.topological_sort(True):
             value = self.propose(site)
             if len(list(self.child_sites(site))) == 0:
                 results.append(value)
