@@ -33,9 +33,8 @@ def _resample(log_weights, estimate_normalizer=False):
     return indices
 
 def _ancestor_index(indices, tensor):
-    return torch.stack([t[i] for (t, i) in
-                        zip(tensor.unbind(dim=1), indices.unbind(dim=1))],
-                       dim=1)
+    indices = indices.view(*indices.shape, *(1,) * len(tensor.shape[2:]))
+    return torch.gather(tensor, 0, indices.expand(*tensor.shape))
 
 class ParticleDict(nn.ParameterDict):
     def __init__(self, num_data, num_particles, batch_dim=1, particle_dim=0):
