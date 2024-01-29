@@ -16,12 +16,11 @@ class DigitPositions(MarkovKernel):
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
 
     def forward(self, z_where, K=3, batch_shape=()) -> dist.Distribution:
-        scale = self.scale
+        scale = self.scale.expand([*batch_shape, K, *self.loc.shape])
         if z_where is None:
+            z_where = self.loc.expand([*batch_shape, K, *self.loc.shape])
             scale = scale * 5
-        prior = dist.Normal(self.loc, scale).expand([
-            *batch_shape, K, *self.loc.shape
-        ])
+        prior = dist.Normal(z_where, scale)
         return prior.to_event(2)
 
 class DigitFeatures(MarkovKernel):
