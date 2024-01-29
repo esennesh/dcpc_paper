@@ -14,7 +14,7 @@
             "data_dir": "data/",
             "batch_size": 128,
             "validation_split": 0.1,
-            "num_workers": 0
+            "num_workers": 2
         }
     },
     "optimizer": {
