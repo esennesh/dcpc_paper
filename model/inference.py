@@ -132,32 +132,32 @@ class PpcGraphicalModel(GraphicalModel):
 
     def propose(self, site):
         if not self.nodes[site]['is_observed']:
-            with torch.no_grad():
-                z = self.nodes[site]['value']
-                error = self.complete_conditional_error(site)
-                proposal = dist.Normal(z + self.temperature * error,
-                                       math.sqrt(2*self.temperature))
-                proposal = proposal.to_event(self.nodes[site]['event_dim'])
-                z_next = proposal.sample()
+            z = self.nodes[site]['value']
+            error = self.complete_conditional_error(site)
+            proposal = dist.Normal(z + self.temperature * error,
+                                   math.sqrt(2*self.temperature))
+            proposal = proposal.to_event(self.nodes[site]['event_dim'])
+            z_next = proposal.sample()
 
-                log_cc = self.log_complete_conditional(site, z_next)
-                log_proposal = proposal.log_prob(z_next)
-                particle_indices, log_Zcc = _resample(log_cc - log_proposal,
-                                                      estimate_normalizer=True)
-                z_next = _ancestor_index(particle_indices, z_next)
-                log_cc = _ancestor_index(particle_indices, log_cc)
-                smc_delta = dist.Delta(z_next, log_cc - log_Zcc,
-                                       event_dim=self.nodes[site]['event_dim'])
-                self.update(site, pyro.sample(site, smc_delta))
+            log_cc = self.log_complete_conditional(site, z_next)
+            log_proposal = proposal.log_prob(z_next)
+            particle_indices, log_Zcc = _resample(log_cc - log_proposal,
+                                                  estimate_normalizer=True)
+            z_next = _ancestor_index(particle_indices, z_next)
+            log_cc = _ancestor_index(particle_indices, log_cc)
+            smc_delta = dist.Delta(z_next, log_cc - log_Zcc,
+                                   event_dim=self.nodes[site]['event_dim'])
+            self.update(site, pyro.sample(site, smc_delta))
         return self.nodes[site]['value']
 
     def guide(self):
-        results = []
-        for site in self.topological_sort(True):
-            value = self.propose(site)
-            if len(list(self.child_sites(site))) == 0:
-                results.append(value)
-        return results[0] if len(results) == 1 else tuple(results)
+        with torch.no_grad():
+            results = []
+            for site in self.topological_sort(True):
+                value = self.propose(site)
+                if len(list(self.child_sites(site))) == 0:
+                    results.append(value)
+            return results[0] if len(results) == 1 else tuple(results)
 
 def dist_params(dist: Distribution):
     return {k: v for k, v in dist.__dict__.items() if k[0] != '_'}
