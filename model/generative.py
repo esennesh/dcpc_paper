@@ -77,6 +77,7 @@ class DigitsDecoder(MarkovKernel):
 class DigitDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
         super().__init__()
+        self.batch_shape = ()
         self._digit_side = 28
         self.decoder = nn.Sequential(
             nn.Linear(z_dim, hidden_dim // 2), nn.ReLU(),
