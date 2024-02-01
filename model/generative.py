@@ -17,7 +17,7 @@ class DigitPositions(MarkovKernel):
         self.batch_shape = ()
         self._num_digits = num_digits
 
-    def forward(self, z_where, batch_shape=()) -> dist.Distribution:
+    def forward(self, z_where) -> dist.Distribution:
         param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         scale = self.scale.expand(param_shape)
         if z_where is None:
