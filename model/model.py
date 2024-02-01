@@ -80,7 +80,7 @@ class MnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, temperature=1e-3,
                  z_dim=10):
         super().__init__()
-        self.digit_features = DigitFeatures(z_dim)
+        self.digit_features = DigitFeatures(1, z_dim)
         self.decoder = DigitDecoder(digit_side, hidden_dim, z_dim)
 
         self.graph = PpcGraphicalModel(temperature)
@@ -88,23 +88,12 @@ class MnistPpc(BaseModel):
         self.graph.add_node("X", ["z_what"], self.decoder)
 
     def forward(self, xs=None):
-        if xs is not None:
-            B, _, _, _ = xs.shape
-        else:
-            B = 1
-
-        self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
-        return self.graph.forward(X=xs)
+        B = xs.shape[0] if xs is not None else 1
+        return self.graph.forward(batch_shape=(B,), X=xs)
 
     def guide(self, xs=None):
-        if xs is not None:
-            B, _, _, _ = xs.shape
-            self.graph.clamp("X", xs)
-        else:
-            B = 1
-
-        self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
-        return self.graph.guide()
+        B = xs.shape[0] if xs is not None else 1
+        return self.graph.guide(batch_shape=(B,), X=xs)
 
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
@@ -113,8 +102,8 @@ class BouncingMnistPpc(BaseModel):
         self._num_digits = num_digits
 
         self.decoder = DigitsDecoder(digit_side, hidden_dim, x_side, z_what_dim)
-        self.digit_features = DigitFeatures(z_what_dim)
-        self.digit_positions = DigitPositions(z_where_dim)
+        self.digit_features = DigitFeatures(num_digits, z_what_dim)
+        self.digit_positions = DigitPositions(num_digits, z_where_dim)
 
         self.graph = PpcGraphicalModel(temperature)
         self.graph.add_node("z_what", [], self.digit_features)
@@ -131,22 +120,12 @@ class BouncingMnistPpc(BaseModel):
 
     def forward(self, xs):
         B, T, _, _ = xs.shape
-        self.graph.set_kwargs("z_what", K=self._num_digits, batch_shape=(B,))
-        for t, x in pyro.markov(enumerate(xs.unbind(1))):
-            self.graph.set_kwargs("z_where__%d" % t, K=self._num_digits,
-                                  batch_shape=(B,))
-        recons = self.graph.forward(**{'X__%d' % t: xs[:, t] for t in range(T)})
+        recons = self.graph.forward(batch_shape=(B,),
+                                    **{'X__%d' % t: xs[:, t] for t in range(T)})
         return torch.stack(recons, dim=2)
 
     def guide(self, xs):
-        if xs is not None:
-            B, _, _, _ = xs.shape
-        else:
-            B = 1
-
-        self.graph.set_kwargs("z_what", K=self._num_digits, batch_shape=(B,))
-        for t, x in enumerate(xs.unbind(1)):
-            self.graph.set_kwargs("z_where__%d" % t, K=self._num_digits,
-                                  batch_shape=(B,))
-            self.graph.clamp("X__%d" % t, xs[:, t])
-        return self.graph.guide()
+        B, _, _, _ = xs.shape
+        recons = self.graph.guide(batch_shape=(B,),
+                                  **{'X__%d' % t: xs[:, t] for t in range(T)})
+        return torch.stack(recons, dim=2)

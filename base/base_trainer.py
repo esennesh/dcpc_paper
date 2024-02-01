@@ -66,12 +66,14 @@ class BaseTrainer:
         """
         raise NotImplementedError
 
-    def train(self):
+    def train(self, profiler=None):
         """
         Full training logic
         """
         not_improved_count = 0
         for epoch in range(self.start_epoch, self.epochs + 1):
+            if profiler is not None:
+                profiler.step()
             result = self._train_epoch(epoch)
 
             # save logged informations into log dict

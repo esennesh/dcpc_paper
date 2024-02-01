@@ -177,10 +177,10 @@ class PpcTrainer(BaseTrainer):
     def _initialize_particles(self, batch_idx, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
         with pyro.plate_stack("initialize", (self.num_particles, len(data))):
-            trace = pyro.poutine.trace(self.model.forward).get_trace(data)
+            self.model.forward(data)
         batch_start = batch_idx * data_loader.batch_size
         batch_indices = range(batch_start, batch_start + len(data))
-        self._save_particles(batch_indices, trace, train)
+        self._save_particles(batch_indices, train)
 
     def _load_particles(self, batch_indices, train=True):
         particles = self.train_particles if train else self.valid_particles
@@ -188,11 +188,11 @@ class PpcTrainer(BaseTrainer):
             value = particles.get_particles(site, batch_indices)
             self.model.graph.update(site, value.to(self.device))
 
-    def _save_particles(self, batch_indices, trace, train=True):
+    def _save_particles(self, batch_indices, train=True):
         particles = self.train_particles if train else self.valid_particles
-        for site in trace.stochastic_nodes:
-            particles.set_particles(site, batch_indices,
-                                    trace.nodes[site]['value'].detach())
+        for site in self.model.graph.stochastic_nodes:
+            value = self.model.graph.nodes[site]['value'].detach()
+            particles.set_particles(site, batch_indices, value)
 
     def _ppc_step(self, batch_idx, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
@@ -202,17 +202,17 @@ class PpcTrainer(BaseTrainer):
 
         # Wasserstein-gradient updates to latent variables
         with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
-            trace, log_weight = utils.importance(self.model.forward,
-                                                 self.model.guide, data)
+            _, log_weight = utils.importance(self.model.forward,
+                                             self.model.guide, data)
 
         loss = (-log_weight).mean()
         if train:
-            (len(self.data_loader.sampler) / len(data) * loss).backward()
+            loss.backward()
             self.optimizer(pyro.get_param_store().values())
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
 
-        self._save_particles(batch_indices, trace, train)
-        return loss, log_weight
+        self._save_particles(batch_indices, train)
+        return loss, log_weight.detach()
 
     def _train_epoch(self, epoch):
         """

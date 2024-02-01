@@ -10,34 +10,37 @@ import torch.nn.functional as F
 from base import BaseModel, MarkovKernel
 
 class DigitPositions(MarkovKernel):
-    def __init__(self, z_where_dim=2):
+    def __init__(self, num_digits=3, z_where_dim=2):
         super().__init__()
         self.register_buffer('loc', torch.zeros(z_where_dim))
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
+        self.batch_shape = ()
+        self._num_digits = num_digits
 
-    def forward(self, z_where, K=3, batch_shape=()) -> dist.Distribution:
-        scale = self.scale.expand([*batch_shape, K, *self.loc.shape])
+    def forward(self, z_where, batch_shape=()) -> dist.Distribution:
+        param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
+        scale = self.scale.expand(param_shape)
         if z_where is None:
-            z_where = self.loc.expand([*batch_shape, K, *self.loc.shape])
+            z_where = self.loc.expand(param_shape)
             scale = scale * 5
-        prior = dist.Normal(z_where, scale)
-        return prior.to_event(2)
+        return dist.Normal(z_where, scale).to_event(2)
 
 class DigitFeatures(MarkovKernel):
-    def __init__(self, z_what_dim=10):
+    def __init__(self, num_digits=3, z_what_dim=10):
         super().__init__()
         self.register_buffer('loc', torch.zeros(z_what_dim))
         self.register_buffer('scale', torch.ones(z_what_dim))
+        self.batch_shape = ()
+        self._num_digits = num_digits
 
-    def forward(self, K=3, batch_shape=()) -> dist.Distribution:
-        prior = dist.Normal(self.loc, self.scale).expand([
-            *batch_shape, K, *self.loc.shape
-        ])
-        return prior.to_event(2)
+    def forward(self, batch_shape=()) -> dist.Distribution:
+        dist_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
+        return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
 
 class DigitsDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10):
         super().__init__()
+        self.batch_shape = ()
         self._digit_side = digit_side
         self._x_side = x_side
         self.decoder = nn.Sequential(
@@ -74,6 +77,7 @@ class DigitsDecoder(MarkovKernel):
 class DigitDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
         super().__init__()
+        self.batch_shape = ()
         self._digit_side = 28
         self.decoder = nn.Sequential(
             nn.Linear(z_dim, hidden_dim // 2), nn.ReLU(),
@@ -101,12 +105,8 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def child_sites(self, site):
         return self._graph.successors(site)
 
-    def get_kwargs(self, site):
-        return self.nodes[site]['kwargs']
-
     def kernel(self, site):
-        return functools.partial(self.nodes[site]['kernel'],
-                                 **self.get_kwargs(site))
+        return self.nodes[site]['kernel']
 
     def log_prob(self, site, value, *args, **kwargs):
         density = self.kernel(site)(*args, **kwargs)
@@ -122,8 +122,10 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def parent_vals(self, site):
         return tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
 
-    def set_kwargs(self, site, **kwargs):
-        self.nodes[site]['kwargs'] = kwargs
+    @functools.cached_property
+    def stochastic_nodes(self):
+        return [site for site in self.nodes
+                if not self.nodes[site]['is_observed']]
 
     @functools.cache
     def topological_sort(self, reverse=False):
@@ -132,15 +134,17 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
             nodes = list(reversed(nodes))
         return nodes
 
-    def forward(self, **kwargs):
-        results = []
+    def forward(self, batch_shape=(), **kwargs):
+        results = ()
         for site in self.topological_sort():
-            density = self.kernel(site)(*self.parent_vals(site))
+            kernel = self.kernel(site)
+            kernel.batch_shape = batch_shape
+            density = kernel(*self.parent_vals(site))
             self.nodes[site]['event_dim'] = density.event_dim
             self.nodes[site]['value'] = pyro.sample(site, density,
                                                     obs=kwargs.get(site, None))
             self.nodes[site]['is_observed'] = site in kwargs
 
             if len(list(self.child_sites(site))) == 0:
-                results.append(self.nodes[site]['value'])
-        return results[0] if len(results) == 1 else tuple(results)
+                results = results + (self.nodes[site]['value'],)
+        return results[0] if len(results) == 1 else results

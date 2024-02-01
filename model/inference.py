@@ -23,11 +23,9 @@ from .generative import GraphicalModel
 import utils
 
 def _resample(log_weights, estimate_normalizer=False):
-    log_weights = torch.swapaxes(log_weights, 0, -1)
-    discrete = dist.Categorical(logits=log_weights)
-    indices = discrete.sample(sample_shape=torch.Size([log_weights.shape[-1]]))
+    logits = log_weights - torch.logsumexp(log_weights, dim=0)
+    indices = torch.multinomial(logits.exp().T, logits.shape[0]).T
     if estimate_normalizer:
-        log_weights = torch.swapaxes(log_weights, 0, -1)
         log_normalizer = utils.logmeanexp(log_weights)
         return indices, log_normalizer
     return indices
@@ -65,14 +63,12 @@ class ParticleDict(nn.ParameterDict):
             shape[self._batch_dim] = self.num_data
             self[key] = torch.zeros(*shape)
         with torch.no_grad():
-            particles = self[key].swapdims(0, self._particle_dim)
-            val = val.swapdims(0, self._particle_dim)
-            particles = particles.swapdims(1, self._batch_dim)
-            val = val.swapdims(1, self._batch_dim)
-            particles[:, idx] = val.to(device=particles.device)
-            particles = particles.swapdims(1, self._batch_dim)
-            particles = particles.swapdims(0, self._particle_dim)
-            self[key] = particles
+            indices = torch.LongTensor(idx).view(
+                (1,) * self._batch_dim + (len(idx),) +\
+                (1,) * len(val.shape[self._batch_dim+1:])
+            )
+            self[key].scatter_(self._batch_dim, indices.expand(val.shape),
+                               val.to(self[key].device))
 
 class PpcGraphicalModel(GraphicalModel):
     def __init__(self, temperature):
@@ -86,10 +82,11 @@ class PpcGraphicalModel(GraphicalModel):
             self.nodes[site]['is_observed'] = False
 
     def update(self, site, value):
-        self.nodes[site]['value'] = value.detach()
+        self.nodes[site]['value'] = value
         self.nodes[site]['errors'] = None
         for child in self.child_sites(site):
             self.nodes[child]['errors'] = None
+        return self.nodes[site]['value']
 
     def clamp(self, site, value):
         self.update(site, value)
@@ -130,33 +127,36 @@ class PpcGraphicalModel(GraphicalModel):
         return log_sitecc
 
     def propose(self, site):
-        if not self.nodes[site]['is_observed']:
-            z = self.nodes[site]['value']
-            error = self.complete_conditional_error(site)
-            proposal = dist.Normal(z + self.temperature * error,
-                                   math.sqrt(2*self.temperature))
-            proposal = proposal.to_event(self.nodes[site]['event_dim'])
-            z_next = proposal.sample()
+        z = self.nodes[site]['value']
+        error = self.complete_conditional_error(site)
+        proposal = dist.Normal(z + self.temperature * error,
+                               math.sqrt(2*self.temperature))
+        proposal = proposal.to_event(self.nodes[site]['event_dim'])
+        z_next = proposal.sample()
 
-            log_cc = self.log_complete_conditional(site, z_next)
-            log_proposal = proposal.log_prob(z_next)
-            particle_indices, log_Zcc = _resample(log_cc - log_proposal,
-                                                  estimate_normalizer=True)
-            z_next = _ancestor_index(particle_indices, z_next)
-            log_cc = _ancestor_index(particle_indices, log_cc)
-            smc_delta = dist.Delta(z_next, log_cc - log_Zcc,
-                                   event_dim=self.nodes[site]['event_dim'])
-            self.update(site, pyro.sample(site, smc_delta))
-        return self.nodes[site]['value']
+        log_cc = self.log_complete_conditional(site, z_next)
+        log_proposal = proposal.log_prob(z_next)
+        particle_indices, log_Zcc = _resample(log_cc - log_proposal,
+                                              estimate_normalizer=True)
+        z_next = _ancestor_index(particle_indices, z_next)
+        log_cc = _ancestor_index(particle_indices, log_cc)
+        smc_delta = dist.Delta(z_next, log_cc - log_Zcc,
+                               event_dim=self.nodes[site]['event_dim'])
+        return self.update(site, pyro.sample(site, smc_delta))
 
-    def guide(self):
+    def guide(self, batch_shape=(), **kwargs):
         with torch.no_grad():
-            results = []
+            results = ()
             for site in self.topological_sort(True):
-                value = self.propose(site)
+                self.kernel(site).batch_shape = batch_shape
+                if site in kwargs:
+                    self.clamp(site, kwargs[site])
+                    value = kwargs[site]
+                else:
+                    value = self.propose(site)
                 if len(list(self.child_sites(site))) == 0:
-                    results.append(value)
-            return results[0] if len(results) == 1 else tuple(results)
+                    results = results + (value,)
+            return results[0] if len(results) == 1 else results
 
 def dist_params(dist: Distribution):
     return {k: v for k, v in dist.__dict__.items() if k[0] != '_'}
