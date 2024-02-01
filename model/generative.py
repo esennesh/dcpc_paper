@@ -33,7 +33,7 @@ class DigitFeatures(MarkovKernel):
         self.batch_shape = ()
         self._num_digits = num_digits
 
-    def forward(self, batch_shape=()) -> dist.Distribution:
+    def forward(self) -> dist.Distribution:
         dist_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
 
