@@ -6,7 +6,7 @@ from pyro.infer import SVI, JitTraceGraph_ELBO, TraceGraph_ELBO
 import torch
 from torchvision.utils import make_grid
 from base import BaseTrainer
-from model.inference import ParticleDict
+from model.inference import ParticleDict, ppc
 from utils import inf_loop, MetricTracker
 import utils
 
@@ -201,9 +201,14 @@ class PpcTrainer(BaseTrainer):
         self._load_particles(batch_indices, train)
 
         # Wasserstein-gradient updates to latent variables
-        with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
-            _, log_weight = utils.importance(self.model.forward,
-                                             self.model.guide, data)
+        with ppc(graph=self.model.graph,
+                 temperature=self.optimizer.pt_optim_args['lr']) as infer:
+            with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
+                self.model(data)
+            tp, tq = infer.get_traces()
+            tq.compute_log_prob()
+            tp.compute_log_prob()
+            log_weight = utils.log_joint(tp) - utils.log_joint(tq)
 
         loss = (-log_weight).mean()
         if train:
