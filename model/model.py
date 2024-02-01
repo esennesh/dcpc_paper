@@ -89,7 +89,8 @@ class MnistPpc(BaseModel):
     def forward(self, xs=None):
         B = xs.shape[0] if xs is not None else 1
         self.graph.clamp("X", xs)
-        return self.graph.forward(batch_shape=(B,), X=xs)
+        self.digit_features.batch_shape = (B,)
+        return self.graph.forward(X=xs)
 
     def guide(self, xs=None):
         B = xs.shape[0] if xs is not None else 1
