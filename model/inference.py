@@ -63,14 +63,12 @@ class ParticleDict(nn.ParameterDict):
             shape[self._batch_dim] = self.num_data
             self[key] = torch.zeros(*shape)
         with torch.no_grad():
-            particles = self[key].swapdims(0, self._particle_dim)
-            val = val.swapdims(0, self._particle_dim)
-            particles = particles.swapdims(1, self._batch_dim)
-            val = val.swapdims(1, self._batch_dim)
-            particles[:, idx] = val.to(device=particles.device)
-            particles = particles.swapdims(1, self._batch_dim)
-            particles = particles.swapdims(0, self._particle_dim)
-            self[key] = particles
+            indices = torch.LongTensor(idx).view(
+                (1,) * self._batch_dim + (len(idx),) +\
+                (1,) * len(val.shape[self._batch_dim+1:])
+            )
+            self[key].scatter_(self._batch_dim, indices.expand(val.shape),
+                               val.to(self[key].device))
 
 class PpcGraphicalModel(GraphicalModel):
     def __init__(self, temperature):
