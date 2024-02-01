@@ -105,6 +105,16 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def child_sites(self, site):
         return self._graph.successors(site)
 
+    def clamp(self, site, value):
+        self.nodes[site]['is_observed'] = True
+        return self.update(site, value)
+
+    def clear(self):
+        for site in self.nodes:
+            for key in self.nodes[site]:
+                if key != "kernel":
+                    self.nodes[site][key] = None
+
     def kernel(self, site):
         return self.nodes[site]['kernel']
 
@@ -133,6 +143,10 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         if reverse:
             nodes = list(reversed(nodes))
         return nodes
+
+    def update(self, site, value):
+        self.nodes[site]['value'] = value
+        return self.nodes[site]['value']
 
     def forward(self, batch_shape=(), **kwargs):
         results = ()
