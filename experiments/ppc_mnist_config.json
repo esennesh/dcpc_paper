@@ -4,9 +4,7 @@
 
     "arch": {
         "type": "MnistPpc",
-        "args": {
-            "temperature": 0.01
-        }
+        "args": {}
     },
     "data_loader": {
         "type": "MnistDataLoader",
