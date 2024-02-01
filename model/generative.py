@@ -135,7 +135,7 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         return nodes
 
     def forward(self, batch_shape=(), **kwargs):
-        results = []
+        results = ()
         for site in self.topological_sort():
             kernel = self.kernel(site)
             kernel.batch_shape = batch_shape
@@ -146,5 +146,5 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
             self.nodes[site]['is_observed'] = site in kwargs
 
             if len(list(self.child_sites(site))) == 0:
-                results.append(self.nodes[site]['value'])
-        return results[0] if len(results) == 1 else tuple(results)
+                results = results + (self.nodes[site]['value'],)
+        return results[0] if len(results) == 1 else results
