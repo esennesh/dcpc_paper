@@ -4,9 +4,7 @@
 
     "arch": {
         "type": "BouncingMnistPpc",
-        "args": {
-            "temperature": 0.001
-        }
+        "args": {}
     },
     "data_loader": {
         "type": "BouncingMnistDataLoader",
