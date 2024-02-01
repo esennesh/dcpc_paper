@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel
 from .generative import *
-from .inference import asvi, mlp_amortizer, PpcGraphicalModel
+from .inference import asvi, mlp_amortizer
 
 class BouncingMnistAsvi(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
