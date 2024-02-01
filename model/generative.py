@@ -10,18 +10,20 @@ import torch.nn.functional as F
 from base import BaseModel, MarkovKernel
 
 class DigitPositions(MarkovKernel):
-    def __init__(self, z_where_dim=2):
+    def __init__(self, num_digits=3, z_where_dim=2):
         super().__init__()
         self.register_buffer('loc', torch.zeros(z_where_dim))
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
+        self.batch_shape = ()
+        self._num_digits = num_digits
 
-    def forward(self, z_where, K=3, batch_shape=()) -> dist.Distribution:
-        scale = self.scale.expand([*batch_shape, K, *self.loc.shape])
+    def forward(self, z_where, batch_shape=()) -> dist.Distribution:
+        param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
+        scale = self.scale.expand(param_shape)
         if z_where is None:
-            z_where = self.loc.expand([*batch_shape, K, *self.loc.shape])
+            z_where = self.loc.expand(param_shape)
             scale = scale * 5
-        prior = dist.Normal(z_where, scale)
-        return prior.to_event(2)
+        return dist.Normal(z_where, scale).to_event(2)
 
 class DigitFeatures(MarkovKernel):
     def __init__(self, z_what_dim=10):
