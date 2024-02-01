@@ -40,6 +40,7 @@ class DigitFeatures(MarkovKernel):
 class DigitsDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10):
         super().__init__()
+        self.batch_shape = ()
         self._digit_side = digit_side
         self._x_side = x_side
         self.decoder = nn.Sequential(
