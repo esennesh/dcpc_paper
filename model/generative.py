@@ -105,12 +105,8 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def child_sites(self, site):
         return self._graph.successors(site)
 
-    def get_kwargs(self, site):
-        return self.nodes[site]['kwargs']
-
     def kernel(self, site):
-        return functools.partial(self.nodes[site]['kernel'],
-                                 **self.get_kwargs(site))
+        return self.nodes[site]['kernel']
 
     def log_prob(self, site, value, *args, **kwargs):
         density = self.kernel(site)(*args, **kwargs)
@@ -126,9 +122,6 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def parent_vals(self, site):
         return tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
 
-    def set_kwargs(self, site, **kwargs):
-        self.nodes[site]['kwargs'] = kwargs
-
     @functools.cache
     def topological_sort(self, reverse=False):
         nodes = list(nx.lexicographical_topological_sort(self._graph))
@@ -136,10 +129,12 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
             nodes = list(reversed(nodes))
         return nodes
 
-    def forward(self, **kwargs):
+    def forward(self, batch_shape=(), **kwargs):
         results = []
         for site in self.topological_sort():
-            density = self.kernel(site)(*self.parent_vals(site))
+            kernel = self.kernel(site)
+            kernel.batch_shape = batch_shape
+            density = kernel(*self.parent_vals(site))
             self.nodes[site]['event_dim'] = density.event_dim
             self.nodes[site]['value'] = pyro.sample(site, density,
                                                     obs=kwargs.get(site, None))
