@@ -212,7 +212,7 @@ class PpcTrainer(BaseTrainer):
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
 
         self._save_particles(batch_indices, trace, train)
-        return loss, log_weight
+        return loss, log_weight.detach()
 
     def _train_epoch(self, epoch):
         """
