@@ -14,7 +14,6 @@ from pyro.distributions.distribution import Distribution
 from pyro.infer.autoguide.utils import deep_getattr, deep_setattr, helpful_support_errors, _product
 from pyro.nn.module import PyroModule, PyroParam
 from pyro.poutine.handlers import _make_handler
-from pyro.poutine.guide import GuideMessenger
 from pyro.poutine.trace_messenger import TraceMessenger
 from pyro.poutine.trace_struct import Trace
 from pyro.poutine.util import site_is_subsample
@@ -146,14 +145,15 @@ class PpcGraphicalModel(GraphicalModel):
                     results = results + (value,)
             return results[0] if len(results) == 1 else results
 
-class PpcMessenger(GuideMessenger):
-    def __init__(self, graph: GraphicalModel, model: Callable, temperature):
-        super().__init__(model)
+class PpcMessenger(TraceMessenger):
+    def __init__(self, graph: GraphicalModel, temperature):
         self._graph = graph
-        self._temperature
+        self._temperature = temperature
+        super().__init__()
 
     def _compute_site_errors(self, site):
-        value, pvals = self.graph.nodes[site]['value'], self.parent_vals(site)
+        value = self.graph.nodes[site]['value']
+        pvals = self.graph.parent_vals(site)
         def logprobsum(value, *args, **kwargs):
             return self.graph.log_prob(site, value, *args, **kwargs).sum()
 
@@ -183,38 +183,68 @@ class PpcMessenger(GuideMessenger):
             )
         return log_sitecc
 
+    def _pyro_sample(self, msg):
+        if msg["is_observed"] or site_is_subsample(msg):
+            return
+        prior = msg["fn"]
+        msg["infer"]["prior"] = prior
+        posterior = self.get_posterior(msg["name"], prior)
+        if isinstance(posterior, torch.Tensor):
+            posterior = dist.Delta(posterior, event_dim=prior.event_dim)
+        if posterior.batch_shape != prior.batch_shape:
+            posterior = posterior.expand(prior.batch_shape)
+        msg["fn"] = posterior
+
+    def _pyro_post_sample(self, msg):
+        # Manually apply outer plates.
+        prior = msg["infer"].get("prior")
+        if prior is not None and prior.batch_shape != msg["fn"].batch_shape:
+            msg["infer"]["prior"] = prior.expand(msg["fn"].batch_shape)
+        return super()._pyro_post_sample(msg)
+
     def _site_errors(self, site):
         if self.graph.nodes[site].get('errors', None) is None:
             self.graph.nodes[site]['errors'] = self._compute_site_errors(site)
         return self.graph.nodes[site]['errors']
 
-    @property
-    def graph(self):
-        return self._graph
-
     def get_posterior(self, name: str, prior: Distribution) -> Distribution:
         with torch.no_grad():
-            z = self.graph.nodes[site]['value']
-            error = self._complete_conditional_error(site)
+            z = self.graph.nodes[name]['value']
+            error = self._complete_conditional_error(name)
             proposal = dist.Normal(z + self.temperature * error,
                                    math.sqrt(2*self.temperature))
-            proposal = proposal.to_event(self.graph.nodes[site]['event_dim'])
+            proposal = proposal.to_event(self.graph.nodes[name]['event_dim'])
             z_next = proposal.sample()
 
-            log_cc = self.log_complete_conditional(site, z_next)
+            log_cc = self._log_complete_conditional(name, z_next)
             log_proposal = proposal.log_prob(z_next)
             particle_indices, log_Zcc = _resample(log_cc - log_proposal,
                                                   estimate_normalizer=True)
             z_next = _ancestor_index(particle_indices, z_next)
             log_cc = _ancestor_index(particle_indices, log_cc)
 
-            self.graph.nodes[site]['errors'] = None
-            for child in self.graph.child_sites(site):
+            self.graph.nodes[name]['errors'] = None
+            for child in self.graph.child_sites(name):
                 self.graph.nodes[child]['errors'] = None
-            self.graph.update(site, z_next)
 
             return dist.Delta(z_next, log_cc - log_Zcc,
-                              event_dim=self.graph.nodes[site]['event_dim'])
+                              event_dim=self.graph.nodes[name]['event_dim'])
+
+    def get_traces(self):
+        guide_trace = pyro.poutine.util.prune_subsample_sites(self.trace)
+        model_trace = model_trace = guide_trace.copy()
+        for name, guide_site in list(guide_trace.nodes.items()):
+            if guide_site["type"] != "sample" or guide_site["is_observed"]:
+                del guide_trace.nodes[name]
+                continue
+            model_site = model_trace.nodes[name].copy()
+            model_site["fn"] = guide_site["infer"]["prior"]
+            model_trace.nodes[name] = model_site
+        return model_trace, guide_trace
+
+    @property
+    def graph(self):
+        return self._graph
 
     @property
     def temperature(self):
