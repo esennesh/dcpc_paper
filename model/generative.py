@@ -122,6 +122,11 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def parent_vals(self, site):
         return tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
 
+    @functools.cached_property
+    def stochastic_nodes(self):
+        return [site for site in self.nodes
+                if not self.nodes[site]['is_observed']]
+
     @functools.cache
     def topological_sort(self, reverse=False):
         nodes = list(nx.lexicographical_topological_sort(self._graph))
