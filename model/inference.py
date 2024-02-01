@@ -346,6 +346,7 @@ class AsviMessenger(TraceMessenger):
 
 _msngrs = [
     AsviMessenger,
+    PpcMessenger,
 #    NeuralAsviMessenger,
 ]
 
