@@ -14,6 +14,7 @@ from pyro.distributions.distribution import Distribution
 from pyro.infer.autoguide.utils import deep_getattr, deep_setattr, helpful_support_errors, _product
 from pyro.nn.module import PyroModule, PyroParam
 from pyro.poutine.handlers import _make_handler
+from pyro.poutine.guide import GuideMessenger
 from pyro.poutine.trace_messenger import TraceMessenger
 from pyro.poutine.trace_struct import Trace
 from pyro.poutine.util import site_is_subsample
@@ -144,6 +145,80 @@ class PpcGraphicalModel(GraphicalModel):
                 if len(list(self.child_sites(site))) == 0:
                     results = results + (value,)
             return results[0] if len(results) == 1 else results
+
+class PpcMessenger(GuideMessenger):
+    def __init__(self, graph: GraphicalModel, model: Callable, temperature):
+        super().__init__(model)
+        self._graph = graph
+        self._temperature
+
+    def _compute_site_errors(self, site):
+        value, pvals = self.graph.nodes[site]['value'], self.parent_vals(site)
+        def logprobsum(value, *args, **kwargs):
+            return self.graph.log_prob(site, value, *args, **kwargs).sum()
+
+        if torch.is_floating_point(value):
+            error = torch.func.grad(logprobsum,
+                                    argnums=tuple(range(1+len(pvals))))
+        else:
+            raise NotImplementedError("Discrete prediction errors not implemented!")
+        return error(value, *pvals)
+
+    def _complete_conditional_error(self, site):
+        error = self._site_errors(site)[0]
+        for child in self.graph.child_sites(site):
+            site_index = list(self.graph.parent_sites(child)).index(site)
+            error = error + self._site_errors(child)[1 + site_index]
+        return error
+
+    def _log_complete_conditional(self, site, value):
+        args = tuple(self.graph.nodes[p]['value'] for p in
+                     self.graph.parent_sites(site))
+        log_sitecc = self.graph.log_prob(site, value, *args)
+        for child in self.graph.child_sites(site):
+            args = tuple(value if s == site else self.graph.nodes[s]['value']
+                         for s in self.graph.parent_sites(child))
+            log_sitecc = log_sitecc + self.graph.log_prob(
+                child, self.graph.nodes[child]['value'], *args
+            )
+        return log_sitecc
+
+    def _site_errors(self, site):
+        if self.graph.nodes[site].get('errors', None) is None:
+            self.graph.nodes[site]['errors'] = self._compute_site_errors(site)
+        return self.graph.nodes[site]['errors']
+
+    @property
+    def graph(self):
+        return self._graph
+
+    def get_posterior(self, name: str, prior: Distribution) -> Distribution:
+        with torch.no_grad():
+            z = self.graph.nodes[site]['value']
+            error = self._complete_conditional_error(site)
+            proposal = dist.Normal(z + self.temperature * error,
+                                   math.sqrt(2*self.temperature))
+            proposal = proposal.to_event(self.graph.nodes[site]['event_dim'])
+            z_next = proposal.sample()
+
+            log_cc = self.log_complete_conditional(site, z_next)
+            log_proposal = proposal.log_prob(z_next)
+            particle_indices, log_Zcc = _resample(log_cc - log_proposal,
+                                                  estimate_normalizer=True)
+            z_next = _ancestor_index(particle_indices, z_next)
+            log_cc = _ancestor_index(particle_indices, log_cc)
+
+            self.graph.nodes[site]['errors'] = None
+            for child in self.graph.child_sites(site):
+                self.graph.nodes[child]['errors'] = None
+            self.graph.update(site, z_next)
+
+            return dist.Delta(z_next, log_cc - log_Zcc,
+                              event_dim=self.graph.nodes[site]['event_dim'])
+
+    @property
+    def temperature(self):
+        return self._temperature
 
 def dist_params(dist: Distribution):
     return {k: v for k, v in dist.__dict__.items() if k[0] != '_'}
