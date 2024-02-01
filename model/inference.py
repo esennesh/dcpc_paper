@@ -147,10 +147,13 @@ class PpcGraphicalModel(GraphicalModel):
             self.update(site, pyro.sample(site, smc_delta))
         return self.nodes[site]['value']
 
-    def guide(self):
+    def guide(self, batch_shape=(), **kwargs):
         with torch.no_grad():
             results = []
             for site in self.topological_sort(True):
+                self.kernel(site).batch_shape = batch_shape
+                if site in kwargs:
+                    self.clamp(site, kwargs[site])
                 value = self.propose(site)
                 if len(list(self.child_sites(site))) == 0:
                     results.append(value)
