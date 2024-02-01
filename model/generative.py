@@ -26,16 +26,16 @@ class DigitPositions(MarkovKernel):
         return dist.Normal(z_where, scale).to_event(2)
 
 class DigitFeatures(MarkovKernel):
-    def __init__(self, z_what_dim=10):
+    def __init__(self, num_digits=3, z_what_dim=10):
         super().__init__()
         self.register_buffer('loc', torch.zeros(z_what_dim))
         self.register_buffer('scale', torch.ones(z_what_dim))
+        self.batch_shape = ()
+        self._num_digits = num_digits
 
-    def forward(self, K=3, batch_shape=()) -> dist.Distribution:
-        prior = dist.Normal(self.loc, self.scale).expand([
-            *batch_shape, K, *self.loc.shape
-        ])
-        return prior.to_event(2)
+    def forward(self, batch_shape=()) -> dist.Distribution:
+        dist_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
+        return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
 
 class DigitsDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10):
