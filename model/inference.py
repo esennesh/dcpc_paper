@@ -75,22 +75,11 @@ class PpcGraphicalModel(GraphicalModel):
         super().__init__()
         self.register_buffer('temperature', torch.ones(1) * temperature)
 
-    def clear(self):
-        for site in self.nodes:
-            self.nodes[site]['value'] = None
-            self.nodes[site]['errors'] = None
-            self.nodes[site]['is_observed'] = False
-
     def update(self, site, value):
-        self.nodes[site]['value'] = value
         self.nodes[site]['errors'] = None
         for child in self.child_sites(site):
             self.nodes[child]['errors'] = None
-        return self.nodes[site]['value']
-
-    def clamp(self, site, value):
-        self.update(site, value)
-        self.nodes[site]['is_observed'] = True
+        return super().update(site, value)
 
     def _site_errors(self, site):
         value, pvals = self.nodes[site]['value'], self.parent_vals(site)
