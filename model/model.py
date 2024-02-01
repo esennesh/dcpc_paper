@@ -80,7 +80,7 @@ class MnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, temperature=1e-3,
                  z_dim=10):
         super().__init__()
-        self.digit_features = DigitFeatures(z_dim)
+        self.digit_features = DigitFeatures(1, z_dim)
         self.decoder = DigitDecoder(digit_side, hidden_dim, z_dim)
 
         self.graph = PpcGraphicalModel(temperature)
@@ -88,23 +88,12 @@ class MnistPpc(BaseModel):
         self.graph.add_node("X", ["z_what"], self.decoder)
 
     def forward(self, xs=None):
-        if xs is not None:
-            B, _, _, _ = xs.shape
-        else:
-            B = 1
-
-        self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
-        return self.graph.forward(X=xs)
+        B = xs.shape[0] if xs is not None else 1
+        return self.graph.forward(batch_shape=(B,), X=xs)
 
     def guide(self, xs=None):
-        if xs is not None:
-            B, _, _, _ = xs.shape
-            self.graph.clamp("X", xs)
-        else:
-            B = 1
-
-        self.graph.set_kwargs("z_what", K=1, batch_shape=(B,))
-        return self.graph.guide()
+        B = xs.shape[0] if xs is not None else 1
+        return self.graph.guide(batch_shape=(B,), X=xs)
 
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
