@@ -148,11 +148,10 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         self.nodes[site]['value'] = value
         return self.nodes[site]['value']
 
-    def forward(self, batch_shape=(), **kwargs):
+    def forward(self, **kwargs):
         results = ()
         for site in self.topological_sort():
-            kernel = self.kernel(site)
-            density = kernel(*self.parent_vals(site))
+            density = self.kernel(site)(*self.parent_vals(site))
             self.nodes[site]['event_dim'] = density.event_dim
             self.nodes[site]['value'] = pyro.sample(site, density,
                                                     obs=kwargs.get(site, None))
