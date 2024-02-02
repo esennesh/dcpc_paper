@@ -148,10 +148,8 @@ class PpcGraphicalModel(GraphicalModel):
         with torch.no_grad():
             results = ()
             for site in self.topological_sort(True):
-                self.kernel(site).batch_shape = batch_shape
-                if site in kwargs:
-                    self.clamp(site, kwargs[site])
-                    value = kwargs[site]
+                if self.nodes[site]['is_observed']:
+                    value = self.nodes[site]['value']
                 else:
                     value = self.propose(site)
                 if len(list(self.child_sites(site))) == 0:
