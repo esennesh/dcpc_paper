@@ -23,11 +23,9 @@ from .generative import GraphicalModel
 import utils
 
 def _resample(log_weights, estimate_normalizer=False):
-    log_weights = torch.swapaxes(log_weights, 0, -1)
-    discrete = dist.Categorical(logits=log_weights)
-    indices = discrete.sample(sample_shape=torch.Size([log_weights.shape[-1]]))
+    discrete = dist.Categorical(logits=torch.swapaxes(log_weights, 0, -1))
+    indices = discrete.sample(sample_shape=torch.Size([log_weights.shape[0]]))
     if estimate_normalizer:
-        log_weights = torch.swapaxes(log_weights, 0, -1)
         log_normalizer = utils.logmeanexp(log_weights)
         return indices, log_normalizer
     return indices
