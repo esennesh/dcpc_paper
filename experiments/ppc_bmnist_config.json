@@ -12,7 +12,7 @@
         "type": "BouncingMnistDataLoader",
         "args":{
             "data_dir": "data/",
-            "batch_size": 128,
+            "batch_size": 64,
             "validation_split": 0.1,
             "num_workers": 2
         }
