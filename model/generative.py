@@ -138,7 +138,6 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         results = ()
         for site in self.topological_sort():
             kernel = self.kernel(site)
-            kernel.batch_shape = batch_shape
             density = kernel(*self.parent_vals(site))
             self.nodes[site]['event_dim'] = density.event_dim
             self.nodes[site]['value'] = pyro.sample(site, density,
