@@ -174,6 +174,11 @@ class PpcTrainer(BaseTrainer):
             self.logger.debug("Initialize particles: valid batch {}".format(batch_idx))
         self.model.graph.clear()
 
+    def train(self, profiler=None):
+        self.train_particles = self.train_particles.to(self.device)
+        self.valid_particles = self.valid_particles.to(self.device)
+        super().train(profiler=profiler)
+
     def _initialize_particles(self, batch_idx, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
         with pyro.plate_stack("initialize", (self.num_particles, len(data))):
@@ -227,6 +232,7 @@ class PpcTrainer(BaseTrainer):
         :return: A log that contains average loss and metric in this epoch.
         """
         self.model.train()
+        self.train_particles.train()
         self.train_metrics.reset()
         for batch_idx, (data, target) in enumerate(self.data_loader):
             data = data.to(self.device)
@@ -269,6 +275,7 @@ class PpcTrainer(BaseTrainer):
 
         self.model.eval()
         self.valid_metrics.reset()
+        self.valid_particles.train()
         with torch.no_grad():
             for batch_idx, (data, target) in enumerate(self.valid_data_loader):
                 data = data.to(self.device)
