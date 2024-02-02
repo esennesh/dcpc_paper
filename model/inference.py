@@ -54,7 +54,8 @@ class ParticleDict(nn.ParameterDict):
         val = self[key]
         assert val.shape[self._batch_dim] == self.num_data
         assert val.shape[self._particle_dim] == self.num_particles
-        return torch.index_select(val, self._batch_dim, torch.LongTensor(idx))
+        return torch.index_select(val, self._batch_dim,
+                                  torch.LongTensor(idx).to(val.device))
 
     def set_particles(self, key: str, idx: Sequence[int], val: torch.Tensor):
         assert val.shape[self._particle_dim] == self.num_particles
@@ -66,7 +67,7 @@ class ParticleDict(nn.ParameterDict):
             indices = torch.LongTensor(idx).view(
                 (1,) * self._batch_dim + (len(idx),) +\
                 (1,) * len(val.shape[self._batch_dim+1:])
-            )
+            ).to(self[key].device)
             self[key].scatter_(self._batch_dim, indices.expand(val.shape),
                                val.to(self[key].device))
 
