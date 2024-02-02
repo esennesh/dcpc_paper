@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel
 from .generative import *
-from .inference import asvi, mlp_amortizer, PpcGraphicalModel
+from .inference import asvi, mlp_amortizer
 
 class BouncingMnistAsvi(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
@@ -77,19 +77,20 @@ class BouncingMnistAsvi(BaseModel):
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
 class MnistPpc(BaseModel):
-    def __init__(self, digit_side=28, hidden_dim=400, temperature=1e-3,
-                 z_dim=10):
+    def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
         super().__init__()
         self.digit_features = DigitFeatures(1, z_dim)
         self.decoder = DigitDecoder(digit_side, hidden_dim, z_dim)
 
-        self.graph = PpcGraphicalModel(temperature)
+        self.graph = GraphicalModel()
         self.graph.add_node("z_what", [], self.digit_features)
         self.graph.add_node("X", ["z_what"], self.decoder)
 
     def forward(self, xs=None):
         B = xs.shape[0] if xs is not None else 1
-        return self.graph.forward(batch_shape=(B,), X=xs)
+        self.graph.clamp("X", xs)
+        self.digit_features.batch_shape = (B,)
+        return self.graph.forward(X=xs)
 
     def guide(self, xs=None):
         B = xs.shape[0] if xs is not None else 1
@@ -97,7 +98,7 @@ class MnistPpc(BaseModel):
 
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
-                 temperature=1e-3, x_side=96, z_what_dim=10, z_where_dim=2):
+                 x_side=96, z_what_dim=10, z_where_dim=2):
         super().__init__()
         self._num_digits = num_digits
 
@@ -105,7 +106,7 @@ class BouncingMnistPpc(BaseModel):
         self.digit_features = DigitFeatures(num_digits, z_what_dim)
         self.digit_positions = DigitPositions(num_digits, z_where_dim)
 
-        self.graph = PpcGraphicalModel(temperature)
+        self.graph = GraphicalModel()
         self.graph.add_node("z_what", [], self.digit_features)
         for t in range(T):
             if t == 0:

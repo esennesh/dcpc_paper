@@ -17,7 +17,7 @@ class DigitPositions(MarkovKernel):
         self.batch_shape = ()
         self._num_digits = num_digits
 
-    def forward(self, z_where, batch_shape=()) -> dist.Distribution:
+    def forward(self, z_where) -> dist.Distribution:
         param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         scale = self.scale.expand(param_shape)
         if z_where is None:
@@ -33,7 +33,7 @@ class DigitFeatures(MarkovKernel):
         self.batch_shape = ()
         self._num_digits = num_digits
 
-    def forward(self, batch_shape=()) -> dist.Distribution:
+    def forward(self) -> dist.Distribution:
         dist_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
 
@@ -105,6 +105,16 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def child_sites(self, site):
         return self._graph.successors(site)
 
+    def clamp(self, site, value):
+        self.nodes[site]['is_observed'] = True
+        return self.update(site, value)
+
+    def clear(self):
+        for site in self.nodes:
+            for key in self.nodes[site]:
+                if key != "kernel":
+                    self.nodes[site][key] = None
+
     def kernel(self, site):
         return self.nodes[site]['kernel']
 
@@ -134,11 +144,14 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
             nodes = list(reversed(nodes))
         return nodes
 
-    def forward(self, batch_shape=(), **kwargs):
+    def update(self, site, value):
+        self.nodes[site]['value'] = value
+        return self.nodes[site]['value']
+
+    def forward(self, **kwargs):
         results = ()
         for site in self.topological_sort():
-            kernel = self.kernel(site)
-            density = kernel(*self.parent_vals(site))
+            density = self.kernel(site)(*self.parent_vals(site))
             self.nodes[site]['event_dim'] = density.event_dim
             self.nodes[site]['value'] = pyro.sample(site, density,
                                                     obs=kwargs.get(site, None))

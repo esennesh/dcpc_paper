@@ -6,7 +6,7 @@ from pyro.infer import SVI, JitTraceGraph_ELBO, TraceGraph_ELBO
 import torch
 from torchvision.utils import make_grid
 from base import BaseTrainer
-from model.inference import ParticleDict
+from model.inference import ParticleDict, ppc
 from utils import inf_loop, MetricTracker
 import utils
 
@@ -174,6 +174,11 @@ class PpcTrainer(BaseTrainer):
             self.logger.debug("Initialize particles: valid batch {}".format(batch_idx))
         self.model.graph.clear()
 
+    def train(self, profiler=None):
+        self.train_particles = self.train_particles.to(self.device)
+        self.valid_particles = self.valid_particles.to(self.device)
+        super().train(profiler=profiler)
+
     def _initialize_particles(self, batch_idx, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
         with pyro.plate_stack("initialize", (self.num_particles, len(data))):
@@ -201,9 +206,14 @@ class PpcTrainer(BaseTrainer):
         self._load_particles(batch_indices, train)
 
         # Wasserstein-gradient updates to latent variables
-        with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
-            _, log_weight = utils.importance(self.model.forward,
-                                             self.model.guide, data)
+        with ppc(graph=self.model.graph,
+                 temperature=self.optimizer.pt_optim_args['lr']) as infer:
+            with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
+                self.model(data)
+            tp, tq = infer.get_traces()
+            tq.compute_log_prob()
+            tp.compute_log_prob()
+            log_weight = utils.log_joint(tp) - utils.log_joint(tq)
 
         loss = (-log_weight).mean()
         if train:
@@ -222,6 +232,7 @@ class PpcTrainer(BaseTrainer):
         :return: A log that contains average loss and metric in this epoch.
         """
         self.model.train()
+        self.train_particles.train()
         self.train_metrics.reset()
         for batch_idx, (data, target) in enumerate(self.data_loader):
             data = data.to(self.device)
@@ -264,6 +275,7 @@ class PpcTrainer(BaseTrainer):
 
         self.model.eval()
         self.valid_metrics.reset()
+        self.valid_particles.train()
         with torch.no_grad():
             for batch_idx, (data, target) in enumerate(self.valid_data_loader):
                 data = data.to(self.device)
