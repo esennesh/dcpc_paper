@@ -126,3 +126,12 @@ class BouncingMnistPpc(BaseModel):
             self.graph.clamp('X__%d' % t, xs[:, t])
         recons = self.graph.forward(**{'X__%d' % t: xs[:, t] for t in range(T)})
         return torch.stack(recons, dim=2)
+
+    def guide(self, xs):
+        B, T, _, _ = xs.shape
+        self.digit_features.batch_shape = (B,)
+        self.digit_positions.batch_shape = (B,)
+        for t in range(T):
+            self.graph.clamp('X__%d' % t, xs[:, t])
+        recons = self.graph.guide(**{'X__%d' % t: xs[:, t] for t in range(T)})
+        return torch.stack(recons, dim=2)
