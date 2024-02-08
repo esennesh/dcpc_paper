@@ -138,6 +138,9 @@ class PpcTrainer(BaseTrainer):
     def __init__(self, model, metric_ftns, optimizer, config,
                  data_loader, valid_data_loader=None, lr_scheduler=None,
                  len_epoch=None, num_particles=4):
+        if config.resume is not None:
+            resume = config.resume
+            config.resume = None
         super().__init__(model, metric_ftns, optimizer, config)
 
         self.config = config
@@ -173,6 +176,9 @@ class PpcTrainer(BaseTrainer):
             self._initialize_particles(batch_idx, data, False)
             self.logger.debug("Initialize particles: valid batch {}".format(batch_idx))
         self.model.graph.clear()
+
+        if resume is not None:
+            self._resume_checkpoint(resume)
 
     def train(self, profiler=None):
         self.train_particles = self.train_particles.to(self.device)
