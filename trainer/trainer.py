@@ -138,8 +138,8 @@ class PpcTrainer(BaseTrainer):
     def __init__(self, model, metric_ftns, optimizer, config,
                  data_loader, valid_data_loader=None, lr_scheduler=None,
                  len_epoch=None, num_particles=4):
+        resume = config.resume
         if config.resume is not None:
-            resume = config.resume
             config.resume = None
         super().__init__(model, metric_ftns, optimizer, config)
 
