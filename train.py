@@ -32,13 +32,22 @@ def main(config):
     metrics = [getattr(module_metric, met) for met in config['metrics']]
 
     # build optimizer.
-    optimizer = config.init_obj('optimizer', pyro.optim)
+    if "lr_scheduler" in config:
+        lr_scheduler = getattr(pyro.optim, config["lr_scheduler"]["type"])
+        lr_scheduler = optimizer = lr_scheduler({
+            "optimizer": getattr(torch.optim, config["optimizer"]["type"]),
+            "optim_args": config["optimizer"]["args"]["optim_args"],
+            **config["lr_scheduler"]["args"]
+        })
+    else:
+        optimizer = config.init_obj('optimizer', pyro.optim)
+        lr_scheduler = None
 
     # build trainer
     trainer = config.init_obj('trainer', module_trainer, model, metrics,
                               optimizer, config=config, data_loader=data_loader,
                               valid_data_loader=valid_data_loader,
-                              lr_scheduler=None)
+                              lr_scheduler=lr_scheduler)
 
     trainer.train()
 

@@ -107,6 +107,10 @@ class ConfigParser:
         module_args.update(kwargs)
         return partial(getattr(module, module_name), *args, **module_args)
 
+    def __contains__(self, item):
+        """Access items like ordinary dict."""
+        return item in self.config
+
     def __getitem__(self, name):
         """Access items like ordinary dict."""
         return self.config[name]
