@@ -6,6 +6,17 @@ from torchvision import datasets, transforms
 from typing import Any, Callable, Optional, Tuple
 from base import BaseDataLoader
 
+class IndexedDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset):
+        self._dataset = dataset
+
+    def __getitem__(self, idx):
+        (data, target) = self._dataset[idx]
+        return (data, target, np.array(idx))
+
+    def __len__(self):
+        return len(self._dataset)
+
 class BouncingMNIST(datasets.VisionDataset):
     def __init__(self, data_dir: str, transform: Optional[Callable]=None,
                  target_transform: Optional[Callable]=None):
@@ -38,22 +49,22 @@ class MnistDataLoader(BaseDataLoader):
     """
     MNIST data loading demo using BaseDataLoader
     """
-    def __init__(self, data_dir, batch_size, validation_split=0.0, num_workers=1, training=True, drop_last=False):
+    def __init__(self, data_dir, batch_size, shuffle=False, validation_split=0.0, num_workers=1, training=True, drop_last=False):
         trsfm = transforms.Compose([
             transforms.ToTensor(),
         ])
         self.data_dir = data_dir
-        self.dataset = datasets.MNIST(self.data_dir, train=training, download=True, transform=trsfm)
-        super().__init__(self.dataset, batch_size, validation_split, num_workers, drop_last=drop_last)
+        self.dataset = IndexedDataset(datasets.MNIST(self.data_dir, train=training, download=True, transform=trsfm))
+        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
 
 class BouncingMnistDataLoader(BaseDataLoader):
     """
     Bouncing MNIST data loading using BaseDataLoader
     """
-    def __init__(self, data_dir, batch_size, validation_split=0.0, num_workers=1, training=True):
+    def __init__(self, data_dir, batch_size, shuffle=False, validation_split=0.0, num_workers=1, training=True):
         trsfm = transforms.Compose([
             transforms.ToTensor(),
         ])
         self.data_dir = data_dir
-        self.dataset = BouncingMNIST(self.data_dir, transform=trsfm)
-        super().__init__(self.dataset, batch_size, validation_split, num_workers)
+        self.dataset = IndexedDataset(BouncingMNIST(self.data_dir, transform=trsfm))
+        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
