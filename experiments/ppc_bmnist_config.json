@@ -26,6 +26,14 @@
             }
         }
     },
+    "lr_scheduler": {
+        "type": "ReduceLROnPlateau",
+        "args": {
+          "patience": 100,
+          "cooldown": 25,
+          "factor": 0.9
+        }
+    },
     "metrics": ["ess", "log_marginal"],
     "trainer": {
         "epochs": 1000,
