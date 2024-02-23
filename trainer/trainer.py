@@ -165,15 +165,15 @@ class PpcTrainer(BaseTrainer):
         self.train_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
         self.valid_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns], writer=self.writer)
 
-        for batch_idx, (data, target) in enumerate(self.data_loader):
+        for batch_idx, (data, target, batch_indices) in enumerate(self.data_loader):
             data = data.to(self.device)
-            self._initialize_particles(batch_idx, data)
+            self._initialize_particles(batch_indices, data)
             self.logger.debug("Initialize particles: train batch {}".format(batch_idx))
         self.model.graph.clear()
 
-        for batch_idx, (data, target) in enumerate(self.valid_data_loader):
+        for batch_idx, (data, target, batch_indices) in enumerate(self.valid_data_loader):
             data = data.to(self.device)
-            self._initialize_particles(batch_idx, data, False)
+            self._initialize_particles(batch_indices, data, False)
             self.logger.debug("Initialize particles: valid batch {}".format(batch_idx))
         self.model.graph.clear()
 
@@ -185,12 +185,10 @@ class PpcTrainer(BaseTrainer):
         self.valid_particles = self.valid_particles.to(self.device)
         super().train(profiler=profiler)
 
-    def _initialize_particles(self, batch_idx, data, train=True):
+    def _initialize_particles(self, batch_indices, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
         with pyro.plate_stack("initialize", (self.num_particles, len(data))):
             self.model.forward(data)
-        batch_start = batch_idx * data_loader.batch_size
-        batch_indices = range(batch_start, batch_start + len(data))
         self._save_particles(batch_indices, train)
 
     def _load_particles(self, batch_indices, train=True):
@@ -205,10 +203,8 @@ class PpcTrainer(BaseTrainer):
             value = self.model.graph.nodes[site]['value'].detach()
             particles.set_particles(site, batch_indices, value)
 
-    def _ppc_step(self, batch_idx, data, train=True):
+    def _ppc_step(self, batch_indices, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
-        batch_start = batch_idx * data_loader.batch_size
-        batch_indices = range(batch_start, batch_start + len(data))
         self._load_particles(batch_indices, train)
 
         # Wasserstein-gradient updates to latent variables
@@ -240,10 +236,9 @@ class PpcTrainer(BaseTrainer):
         self.model.train()
         self.train_particles.train()
         self.train_metrics.reset()
-        for batch_idx, (data, target) in enumerate(self.data_loader):
+        for batch_idx, (data, target, batch_indices) in enumerate(self.data_loader):
             data = data.to(self.device)
-
-            loss, log_weight = self._ppc_step(batch_idx, data)
+            loss, log_weight = self._ppc_step(batch_indices, data)
 
             self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
             self.train_metrics.update('loss', loss.item())
@@ -283,10 +278,9 @@ class PpcTrainer(BaseTrainer):
         self.valid_metrics.reset()
         self.valid_particles.train()
         with torch.no_grad():
-            for batch_idx, (data, target) in enumerate(self.valid_data_loader):
+            for batch_idx, (data, target, batch_indices) in enumerate(self.valid_data_loader):
                 data = data.to(self.device)
-
-                loss, log_weight = self._ppc_step(batch_idx, data, False)
+                loss, log_weight = self._ppc_step(batch_indices, data, False)
 
                 self.writer.set_step((epoch - 1) * len(self.valid_data_loader) + batch_idx, 'valid')
                 self.valid_metrics.update('loss', loss.item())
