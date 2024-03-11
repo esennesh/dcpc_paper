@@ -1,1 +1,2 @@
 *.pth filter=lfs diff=lfs merge=lfs -text
+data/bmnist.tar.xz filter=lfs diff=lfs merge=lfs -text
