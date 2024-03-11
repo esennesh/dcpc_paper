@@ -9,3 +9,6 @@ def ess(log_weight):
 
 def log_marginal(log_weight):
     return utils.logmeanexp(log_weight, 0, False).mean().item()
+
+def log_joint(log_p):
+    return log_p.mean().item()
