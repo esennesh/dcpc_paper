@@ -406,6 +406,59 @@ class FixedVarianceDecoder(MarkovKernel):
             return DiscretizedGaussian(loc, self.likelihood_scale).to_event(3)
         return dist.Normal(loc, self.likelihood_scale).to_event(3)
 
+class ClusterPrecisions(MarkovKernel):
+    def __init__(self, num_clusters, dim=2):
+        super().__init__()
+        self.register_buffer('loc', torch.zeros(dim))
+        self.register_buffer('concentration', torch.ones(dim) * 0.9)
+        self.register_buffer('rate', torch.ones(dim) * 0.9)
+        self.batch_shape = ()
+        self._dim = dim
+        self._num_clusters = num_clusters
+
+    def forward(self) -> dist.Distribution:
+        dist_shape = (*self.batch_shape, self._num_clusters, *self.rate.shape)
+        concentration, rate = self.concentration, self.rate
+        return dist.Gamma(concentration, rate).expand(dist_shape).to_event(2)
+
+class ClusterCenters(MarkovKernel):
+    def __init__(self, num_clusters, dim=2):
+        super().__init__()
+        self.register_buffer('loc', torch.zeros(dim))
+        self.batch_shape = ()
+        self._dim = dim
+        self._num_clusters = num_clusters
+
+    def forward(self, precision) -> dist.Distribution:
+        dist_shape = (*self.batch_shape, self._num_clusters, *self.loc.shape)
+        loc, scale = self.loc.expand(*dist_shape), (1. / precision).sqrt()
+        return dist.Normal(loc, scale).expand(dist_shape).to_event(2)
+
+class ClusterAssignment(MarkovKernel):
+    def __init__(self, num_clusters):
+        super().__init__()
+        self.register_buffer('weights', torch.ones(num_clusters))
+        self.batch_shape = ()
+        self._num_clusters = num_clusters
+
+    def forward(self):
+        dist_shape = (*self.batch_shape, self._num_clusters)
+        return dist.Categorical(self.weights).expand(dist_shape).to_event(1)
+
+class MixtureLikelihood(MarkovKernel):
+    def __init__(self, dim=2):
+        super().__init__()
+        self.batch_shape = ()
+        self._dim = 2
+
+    def forward(self, loc, precision, zs):
+        dist_shape = (*self.batch_shape, self._dim)
+        zs = zs.unsqueeze(dim=-1)
+        loc = loc.take_along_dim(loc, zs, dim=2)
+        precision = precision.take_along_dim(precision, zs, dim=2)
+        scale = (1. / precision).sqrt()
+        return dist.Normal(loc, scale).expand(dist_shape).to_event(1)
+
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def __init__(self):
         super().__init__()
