@@ -64,6 +64,7 @@ class BouncingMnistDataLoader(BaseDataLoader):
     def __init__(self, data_dir, batch_size, shuffle=False, validation_split=0.0, num_workers=1, training=True):
         trsfm = transforms.Compose([
             transforms.ToTensor(),
+            transforms.Lambda(lambda t: t.mT)
         ])
         self.data_dir = data_dir
         self.dataset = IndexedDataset(BouncingMNIST(self.data_dir, transform=trsfm))
