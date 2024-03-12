@@ -267,3 +267,23 @@ class SequentialMemoryDcpc(DcpcGraphicalModel):
         assert self._num_times == T
         return {"X__%d" % (t+1): xs[:, t].view(-1, math.prod(self._x_shape))
                 for t in range(T)}
+
+class GmmPpc(BaseModel):
+    def __init__(self, num_clusters=3, dim=2):
+        super().__init__()
+        self._dim = dim
+        self._num_clusters = num_clusters
+
+        self.cluster_precisions = ClusterPrecisions(num_clusters, dim)
+        self.cluster_centers = ClusterCenters(num_clusters, dim)
+        self.assignments = ClusterAssignment(num_clusters)
+        self.likelihood = MixtureLikelihood(dim)
+
+        self.graph = GraphicalModel()
+        self.graph.add_node("tau", [], self.cluster_precisions)
+        self.graph.add_node("mu", ["tau"], self.cluster_centers)
+        self.graph.add_node("Z", [], self.assignments)
+        self.graph.add_node("X", ["mu", "tau", "Z"], self.likelihood)
+
+    def conditioner(self, xs):
+        return {"X": xs}
