@@ -424,12 +424,11 @@ class ClusterCenters(MarkovKernel):
     def __init__(self, num_clusters, dim=2):
         super().__init__()
         self.register_buffer('loc', torch.zeros(dim))
-        self.batch_shape = ()
         self._dim = dim
         self._num_clusters = num_clusters
 
     def forward(self, precision) -> dist.Distribution:
-        dist_shape = (*self.batch_shape, self._num_clusters, *self.loc.shape)
+        dist_shape = (self._num_clusters, *self.loc.shape)
         loc, scale = self.loc.expand(*dist_shape), (1. / precision).sqrt()
         return dist.Normal(loc, scale).expand(dist_shape).to_event(2)
 
