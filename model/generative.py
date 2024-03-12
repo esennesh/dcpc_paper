@@ -412,12 +412,11 @@ class ClusterPrecisions(MarkovKernel):
         self.register_buffer('loc', torch.zeros(dim))
         self.register_buffer('concentration', torch.ones(dim) * 0.9)
         self.register_buffer('rate', torch.ones(dim) * 0.9)
-        self.batch_shape = ()
         self._dim = dim
         self._num_clusters = num_clusters
 
     def forward(self) -> dist.Distribution:
-        dist_shape = (*self.batch_shape, self._num_clusters, *self.rate.shape)
+        dist_shape = (self._num_clusters, *self.rate.shape)
         concentration, rate = self.concentration, self.rate
         return dist.Gamma(concentration, rate).expand(dist_shape).to_event(2)
 
