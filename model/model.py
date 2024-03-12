@@ -101,6 +101,7 @@ class BouncingMnistPpc(BaseModel):
                  x_side=96, z_what_dim=10, z_where_dim=2):
         super().__init__()
         self._num_digits = num_digits
+        self._num_times = T
 
         self.decoder = DigitsDecoder(digit_side, hidden_dim, x_side, z_what_dim)
         self.digit_features = DigitFeatures(num_digits, z_what_dim)
@@ -119,8 +120,8 @@ class BouncingMnistPpc(BaseModel):
             self.graph.add_node("X__%d" % t, ["z_what", "z_where__%d" % t],
                                 self.decoder)
 
-    def forward(self, xs):
-        B, T, _, _ = xs.shape
+    def forward(self, xs=None):
+        B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
         self.digit_features.batch_shape = (B,)
         self.digit_positions.batch_shape = (B,)
         for t in range(T):
@@ -128,8 +129,8 @@ class BouncingMnistPpc(BaseModel):
         recons = self.graph.forward(**{'X__%d' % t: xs[:, t] for t in range(T)})
         return torch.stack(recons, dim=2)
 
-    def guide(self, xs):
-        B, T, _, _ = xs.shape
+    def guide(self, xs=None):
+        B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
         self.digit_features.batch_shape = (B,)
         self.digit_positions.batch_shape = (B,)
         for t in range(T):
