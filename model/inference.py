@@ -71,17 +71,23 @@ class ParticleDict(nn.ParameterDict):
             self[key].scatter_(self._batch_dim, indices.expand(val.shape),
                                val.to(self[key].device))
 
-class PpcMessenger(TraceMessenger):
-    def __init__(self, graph: GraphicalModel, temperature):
-        self._graph = graph
+class PpcGraphicalModel(GraphicalModel):
+    def __init__(self, temperature=1e-3):
         self._temperature = temperature
         super().__init__()
 
+    def _complete_conditional_error(self, site):
+        error = self._site_errors(site)[0]
+        for child in self.child_sites(site):
+            site_index = list(self.parent_sites(child)).index(site)
+            error = error + self._site_errors(child)[1 + site_index]
+        return error
+
     def _compute_site_errors(self, site):
-        value = self.graph.nodes[site]['value']
-        pvals = self.graph.parent_vals(site)
+        value = self.nodes[site]['value']
+        pvals = self.parent_vals(site)
         def logprobsum(value, *args, **kwargs):
-            return self.graph.log_prob(site, value, *args, **kwargs).sum()
+            return self.log_prob(site, value, *args, **kwargs).sum()
 
         if torch.is_floating_point(value):
             error = torch.func.grad(logprobsum,
@@ -90,87 +96,54 @@ class PpcMessenger(TraceMessenger):
             raise NotImplementedError("Discrete prediction errors not implemented!")
         return error(value, *pvals)
 
-    def _complete_conditional_error(self, site):
-        error = self._site_errors(site)[0]
-        for child in self.graph.child_sites(site):
-            site_index = list(self.graph.parent_sites(child)).index(site)
-            error = error + self._site_errors(child)[1 + site_index]
-        return error
-
-    def _log_complete_conditional(self, site, value):
-        args = tuple(self.graph.nodes[p]['value'] for p in
-                     self.graph.parent_sites(site))
-        log_sitecc = self.graph.log_prob(site, value, *args)
-        for child in self.graph.child_sites(site):
-            args = tuple(value if s == site else self.graph.nodes[s]['value']
-                         for s in self.graph.parent_sites(child))
-            log_sitecc = log_sitecc + self.graph.log_prob(
-                child, self.graph.nodes[child]['value'], *args
-            )
-        return log_sitecc
-
-    def _pyro_sample(self, msg):
-        if msg["is_observed"] or site_is_subsample(msg):
-            return
-        prior = msg["fn"]
-        msg["infer"]["prior"] = prior
-        posterior = self.get_posterior(msg["name"], prior)
-        if isinstance(posterior, torch.Tensor):
-            posterior = dist.Delta(posterior, event_dim=prior.event_dim)
-        if posterior.batch_shape != prior.batch_shape:
-            posterior = posterior.expand(prior.batch_shape)
-        msg["fn"] = posterior
-
-    def _pyro_post_sample(self, msg):
-        # Manually apply outer plates.
-        prior = msg["infer"].get("prior")
-        if prior is not None and prior.batch_shape != msg["fn"].batch_shape:
-            msg["infer"]["prior"] = prior.expand(msg["fn"].batch_shape)
-        return super()._pyro_post_sample(msg)
-
     def _site_errors(self, site):
-        if self.graph.nodes[site].get('errors', None) is None:
-            self.graph.nodes[site]['errors'] = self._compute_site_errors(site)
-        return self.graph.nodes[site]['errors']
+        if self.nodes[site].get('errors', None) is None:
+            self.nodes[site]['errors'] = self._compute_site_errors(site)
+        return self.nodes[site]['errors']
 
-    def get_posterior(self, name: str, prior: Distribution) -> Distribution:
-        with torch.no_grad():
-            z = self.graph.nodes[name]['value']
-            error = self._complete_conditional_error(name)
-            proposal = dist.Normal(z + self.temperature * error,
-                                   math.sqrt(2*self.temperature))
-            proposal = proposal.to_event(prior.event_dim)
-            z_next = proposal.sample()
+    @torch.no_grad()
+    def get_posterior(self, name: str, event_dim: int) -> Distribution:
+        z = self.nodes[name]['value']
+        error = self._complete_conditional_error(name)
+        proposal = dist.Normal(z + self.temperature * error,
+                               math.sqrt(2*self.temperature))
+        proposal = proposal.to_event(event_dim)
+        z_next = proposal.sample()
 
-            log_cc = self._log_complete_conditional(name, z_next)
-            log_proposal = proposal.log_prob(z_next)
-            particle_indices, log_Zcc = _resample(log_cc - log_proposal,
-                                                  estimate_normalizer=True)
-            z_next = _ancestor_index(particle_indices, z_next)
-            log_cc = _ancestor_index(particle_indices, log_cc)
+        log_cc = self.log_complete_conditional(name, z_next)
+        log_proposal = proposal.log_prob(z_next)
+        particle_indices, log_Zcc = _resample(log_cc - log_proposal,
+                                              estimate_normalizer=True)
+        z_next = _ancestor_index(particle_indices, z_next)
+        log_cc = _ancestor_index(particle_indices, log_cc)
 
-            self.graph.nodes[name]['errors'] = None
-            for child in self.graph.child_sites(name):
-                self.graph.nodes[child]['errors'] = None
+        self.nodes[name]['errors'] = None
+        for child in self.child_sites(name):
+            self.nodes[child]['errors'] = None
 
-            return dist.Delta(z_next, log_cc - log_Zcc,
-                              event_dim=prior.event_dim)
+        return dist.Delta(z_next, log_cc - log_Zcc, event_dim=event_dim)
 
-    def get_traces(self):
-        guide_trace = pyro.poutine.util.prune_subsample_sites(self.trace)
-        model_trace = model_trace = guide_trace.copy()
-        for name, guide_site in list(guide_trace.nodes.items()):
-            if guide_site["type"] != "sample" or guide_site["is_observed"]:
-                del guide_trace.nodes[name]
-                continue
-            model_site = model_trace.nodes[name].copy()
-            model_site["fn"] = guide_site["infer"]["prior"]
-            model_trace.nodes[name] = model_site
-        return model_trace, guide_trace
+    def guide(self):
+        results = ()
+        for site, kernel in self.sweep(forward=False):
+            if not self.nodes[site]["is_observed"]:
+                posterior = self.get_posterior(site, kernel.event_dim)
+                self.update(site, pyro.sample(site, posterior))
 
-    @property
-    def graph(self):
-        return self._graph
+            if len(list(self.child_sites(site))) == 0:
+                results = results + (self.nodes[site]['value'],)
+        return results[0] if len(results) == 1 else results
+
+    def log_complete_conditional(self, site, value):
+        args = tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
+        log_sitecc = self.log_prob(site, value, *args)
+        for child in self.child_sites(site):
+            args = tuple(value if s == site else self.nodes[s]['value']
+                         for s in self.parent_sites(child))
+            log_sitecc = log_sitecc + self.log_prob(child,
+                                                    self.nodes[child]['value'],
+                                                    *args)
+        return log_sitecc
 
     @property
     def temperature(self):
@@ -272,8 +245,6 @@ class AsviMessenger(TraceMessenger):
 
 _msngrs = [
     AsviMessenger,
-    PpcMessenger,
-#    NeuralAsviMessenger,
 ]
 
 for _msngr_cls in _msngrs:
