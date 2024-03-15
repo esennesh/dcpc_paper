@@ -4,7 +4,9 @@
 
     "arch": {
         "type": "MnistPpc",
-        "args": {}
+        "args": {
+            "temperature": 0.01
+        }
     },
     "data_loader": {
         "type": "MnistDataLoader",
@@ -37,7 +39,7 @@
     },
     "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 1000,
+        "epochs": 500,
         "monitor": "min val_loss",
         "save_dir": "saved/",
         "save_period": 50,
@@ -45,7 +47,8 @@
         "verbosity": 2,
         "type": "PpcTrainer",
         "args": {
-            "num_particles": 32
+            "num_particles": 32,
+            "num_sweeps": 4
         }
     }
 }
