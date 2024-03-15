@@ -115,6 +115,17 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
                 if key != "kernel":
                     self.nodes[site][key] = None
 
+    def forward(self, **kwargs):
+        results = ()
+        for site, density in self.sweep():
+            obs = kwargs.get(site, None)
+            self.nodes[site]['is_observed'] = obs is not None
+            self.update(site, pyro.sample(site, density, obs=obs))
+
+            if len(list(self.child_sites(site))) == 0:
+                results = results + (self.nodes[site]['value'],)
+        return results[0] if len(results) == 1 else results
+
     def kernel(self, site):
         return self.nodes[site]['kernel']
 
@@ -137,6 +148,13 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         return [site for site in self.nodes
                 if not self.nodes[site]['is_observed']]
 
+    def sweep(self, forward=True, **kwargs):
+        for site in self.topological_sort(not forward):
+            if forward or self.nodes[site]['dist'] is None:
+                self.nodes[site]['dist'] =\
+                    self.kernel(site)(*self.parent_vals(site))
+            yield site, self.nodes[site]['dist']
+
     @functools.cache
     def topological_sort(self, reverse=False):
         nodes = list(nx.lexicographical_topological_sort(self._graph))
@@ -147,16 +165,3 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def update(self, site, value):
         self.nodes[site]['value'] = value
         return self.nodes[site]['value']
-
-    def forward(self, **kwargs):
-        results = ()
-        for site in self.topological_sort():
-            density = self.kernel(site)(*self.parent_vals(site))
-            self.nodes[site]['event_dim'] = density.event_dim
-            self.nodes[site]['value'] = pyro.sample(site, density,
-                                                    obs=kwargs.get(site, None))
-            self.nodes[site]['is_observed'] = site in kwargs
-
-            if len(list(self.child_sites(site))) == 0:
-                results = results + (self.nodes[site]['value'],)
-        return results[0] if len(results) == 1 else results

@@ -139,7 +139,7 @@ class PpcMessenger(TraceMessenger):
             error = self._complete_conditional_error(name)
             proposal = dist.Normal(z + self.temperature * error,
                                    math.sqrt(2*self.temperature))
-            proposal = proposal.to_event(self.graph.nodes[name]['event_dim'])
+            proposal = proposal.to_event(prior.event_dim)
             z_next = proposal.sample()
 
             log_cc = self._log_complete_conditional(name, z_next)
@@ -154,7 +154,7 @@ class PpcMessenger(TraceMessenger):
                 self.graph.nodes[child]['errors'] = None
 
             return dist.Delta(z_next, log_cc - log_Zcc,
-                              event_dim=self.graph.nodes[name]['event_dim'])
+                              event_dim=prior.event_dim)
 
     def get_traces(self):
         guide_trace = pyro.poutine.util.prune_subsample_sites(self.trace)
