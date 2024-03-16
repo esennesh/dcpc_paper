@@ -17,6 +17,10 @@ class DigitPositions(MarkovKernel):
         self.batch_shape = ()
         self._num_digits = num_digits
 
+    @property
+    def event_dim(self):
+        return 2
+
     def forward(self, z_where) -> dist.Distribution:
         param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         scale = self.scale.expand(param_shape)
@@ -32,6 +36,10 @@ class DigitFeatures(MarkovKernel):
         self.register_buffer('scale', torch.ones(z_what_dim))
         self.batch_shape = ()
         self._num_digits = num_digits
+
+    @property
+    def event_dim(self):
+        return 2
 
     def forward(self) -> dist.Distribution:
         dist_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
@@ -68,6 +76,10 @@ class DigitsDecoder(MarkovKernel):
                                align_corners=True).squeeze(1)
         return frames.view(P, B, K, self._x_side, self._x_side)
 
+    @property
+    def event_dim(self):
+        return 2
+
     def forward(self, what, where) -> dist.Distribution:
         P, B, K, _ = where.shape
         digits = self.decoder(what)
@@ -84,6 +96,10 @@ class DigitDecoder(MarkovKernel):
             nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
             nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
         )
+
+    @property
+    def event_dim(self):
+        return 3
 
     def forward(self, what, x=None) -> dist.Distribution:
         P, B, _, _ = what.shape
@@ -150,7 +166,11 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
 
     def sweep(self, forward=True, **kwargs):
         for site in self.topological_sort(not forward):
-            yield site, self.kernel(site)(*self.parent_vals(site))
+            kernel = self.kernel(site)
+            if forward:
+                yield site, kernel(*self.parent_vals(site))
+            else:
+                yield site, kernel
 
     @functools.cache
     def topological_sort(self, reverse=False):
