@@ -39,6 +39,10 @@ class MarkovKernel(pyro.nn.PyroModule):
     """
     Base class for Markov kernels that output a Pyro distribution
     """
+    @property
+    def event_dim(self):
+        raise NotImplementedError
+
     @abstractmethod
     def forward(self, *args, **kwargs) -> pyro.distributions.Distribution:
         """
