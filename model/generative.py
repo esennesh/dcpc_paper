@@ -166,7 +166,11 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
 
     def sweep(self, forward=True, **kwargs):
         for site in self.topological_sort(not forward):
-            yield site, self.kernel(site)(*self.parent_vals(site))
+            kernel = self.kernel(site)
+            if forward:
+                yield site, kernel(*self.parent_vals(site))
+            else:
+                yield site, kernel
 
     @functools.cache
     def topological_sort(self, reverse=False):
