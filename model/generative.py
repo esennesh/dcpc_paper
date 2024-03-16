@@ -97,8 +97,8 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         self._graph = nx.DiGraph()
 
     def add_node(self, site, parents, kernel):
-        self._graph.add_node(site, event_dim=0, is_observed=False,
-                             kernel=kernel, kwargs={}, value=None)
+        self._graph.add_node(site, is_observed=False, kernel=kernel, kwargs={},
+                             value=None)
         for parent in parents:
             self._graph.add_edge(parent, site)
 
