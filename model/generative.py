@@ -97,8 +97,8 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         self._graph = nx.DiGraph()
 
     def add_node(self, site, parents, kernel):
-        self._graph.add_node(site, event_dim=0, is_observed=False,
-                             kernel=kernel, kwargs={}, value=None)
+        self._graph.add_node(site, is_observed=False, kernel=kernel, kwargs={},
+                             value=None)
         for parent in parents:
             self._graph.add_edge(parent, site)
 
@@ -150,10 +150,7 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
 
     def sweep(self, forward=True, **kwargs):
         for site in self.topological_sort(not forward):
-            if forward or self.nodes[site]['dist'] is None:
-                self.nodes[site]['dist'] =\
-                    self.kernel(site)(*self.parent_vals(site))
-            yield site, self.nodes[site]['dist']
+            yield site, self.kernel(site)(*self.parent_vals(site))
 
     @functools.cache
     def topological_sort(self, reverse=False):
