@@ -150,10 +150,7 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
 
     def sweep(self, forward=True, **kwargs):
         for site in self.topological_sort(not forward):
-            if forward or self.nodes[site]['dist'] is None:
-                self.nodes[site]['dist'] =\
-                    self.kernel(site)(*self.parent_vals(site))
-            yield site, self.nodes[site]['dist']
+            yield site, self.kernel(site)(*self.parent_vals(site))
 
     @functools.cache
     def topological_sort(self, reverse=False):
