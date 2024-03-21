@@ -147,6 +147,26 @@ class ConditionalGaussian(MarkovKernel):
         return dist.MultivariateNormal(self.decoder(hs),
                                        scale_tril=torch.tril(self.covariance))
 
+class MlpBernoulliLikelihood(MarkovKernel):
+    def __init__(self, hidden_dim, in_dim, out_shape, nonlinearity=nn.ReLU):
+        super().__init__()
+        self.batch_shape = ()
+        self._out_shape = out_shape
+
+        self.decoder = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim), nonlinearity(),
+            nn.Linear(hidden_dim, math.prod(self._out_shape)),
+        )
+
+    @property
+    def event_dim(self):
+        return 1 + len(self._out_shape)
+
+    def forward(self, hs: torch.Tensor) -> dist.Distribution:
+        P, B, _ = hs.shape
+        logits = self.decoder(hs).view(P, B, 1, *self._out_shape)
+        return dist.ContinuousBernoulli(logits=logits).to_event(self.event_dim)
+
 class GraphicalModel(BaseModel, pnn.PyroModule):
     def __init__(self):
         super().__init__()
