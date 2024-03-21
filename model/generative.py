@@ -188,9 +188,7 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
 
     def clear(self):
         for site in self.nodes:
-            for key in self.nodes[site]:
-                if key != "kernel":
-                    self.nodes[site][key] = None
+            self.unclamp(site)
 
     def forward(self, **kwargs):
         results = ()
@@ -239,6 +237,11 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         if reverse:
             nodes = list(reversed(nodes))
         return nodes
+
+    def unclamp(self, site):
+        for key in self.nodes[site]:
+            if key != "kernel":
+                self.nodes[site][key] = None
 
     def update(self, site, value):
         self.nodes[site]['value'] = value
