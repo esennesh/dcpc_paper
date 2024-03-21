@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import functools
 import math
 import networkx as nx
@@ -242,3 +243,14 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def update(self, site, value):
         self.nodes[site]['value'] = value
         return self.nodes[site]['value']
+
+@contextmanager
+def clamp_graph(graph, **kwargs):
+    try:
+        for k, v in kwargs.items():
+            graph.clamp(k, v)
+        with pyro.condition(data=kwargs):
+            yield graph
+    finally:
+        for k in kwargs:
+            graph.update(k, None)
