@@ -107,6 +107,24 @@ class DigitDecoder(MarkovKernel):
                                            self._digit_side)
         return dist.ContinuousBernoulli(estimate).to_event(3)
 
+class GaussianPrior(MarkovKernel):
+    def __init__(self, out_dim):
+        super().__init__()
+        self.batch_shape = ()
+
+        self.covariance = nn.Parameter(torch.eye(out_dim))
+
+    @property
+    def event_dim(self):
+        return 1
+
+    def forward(self) -> dist.Distribution:
+        loc = torch.zeros(*self.batch_shape, self.covariance.shape[-1],
+                          device=self.covariance.device)
+        scale = torch.tril(self.covariance).expand(*self.batch_shape,
+                                                   *self.covariance.shape)
+        return dist.MultivariateNormal(loc, scale_tril=scale)
+
 class ConditionalGaussian(MarkovKernel):
     def __init__(self, hidden_dim, in_dim, out_dim, nonlinearity=nn.ReLU):
         super().__init__()
