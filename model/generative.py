@@ -107,6 +107,28 @@ class DigitDecoder(MarkovKernel):
                                            self._digit_side)
         return dist.ContinuousBernoulli(estimate).to_event(3)
 
+class ConditionalGaussian(MarkovKernel):
+    def __init__(self, hidden_dim, in_dim, out_dim, nonlinearity=nn.ReLU):
+        super().__init__()
+        self.batch_shape = ()
+
+        self.covariance = nn.Parameter(torch.eye(out_dim))
+        self.decoder = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim), nonlinearity(),
+            nn.Linear(hidden_dim, out_dim), nonlinearity()
+        )
+
+    @property
+    def event_dim(self):
+        return 1
+
+    def forward(self, hs: torch.Tensor) -> dist.Distribution:
+        P, B, _ = hs.shape
+
+        cov = self.covariance.expand(P, B, *self.covariance.shape)
+        return dist.MultivariateNormal(self.decoder(hs),
+                                       scale_tril=torch.tril(self.covariance))
+
 class GraphicalModel(BaseModel, pnn.PyroModule):
     def __init__(self):
         super().__init__()
