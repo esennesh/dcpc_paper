@@ -190,12 +190,11 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         for site in self.nodes:
             self.unclamp(site)
 
-    def forward(self, **kwargs):
+    def forward(self):
         results = ()
-        for site, density in self.sweep():
-            obs = kwargs.get(site, None)
-            self.nodes[site]['is_observed'] = obs is not None
-            self.update(site, pyro.sample(site, density, obs=obs))
+        for site, kernel in self.sweep():
+            density = kernel(*self.parent_vals(site))
+            self.update(site, pyro.sample(site, density))
 
             if len(list(self.child_sites(site))) == 0:
                 results = results + (self.nodes[site]['value'],)
@@ -223,13 +222,11 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         return [site for site in self.nodes
                 if not self.nodes[site]['is_observed']]
 
-    def sweep(self, forward=True, **kwargs):
+    def sweep(self, forward=True, observations=True):
         for site in self.topological_sort(not forward):
-            kernel = self.kernel(site)
-            if forward:
-                yield site, kernel(*self.parent_vals(site))
-            else:
-                yield site, kernel
+            if self.nodes[site]["is_observed"] and not observations:
+                continue
+            yield site, self.kernel(site)
 
     @functools.cache
     def topological_sort(self, reverse=False):
