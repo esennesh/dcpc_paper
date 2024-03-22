@@ -77,19 +77,23 @@ class BouncingMnistAsvi(BaseModel):
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
 class MnistPpc(BaseModel):
-    def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
+    def __init__(self, digit_side=28, hidden_dims=[400, 400], z_dims=[10, 128]):
         super().__init__()
-        self.digit_features = DigitFeatures(1, z_dim)
-        self.decoder = DigitDecoder(digit_side, hidden_dim, z_dim)
+        self.prior = GaussianPrior(z_dims[0])
+        self.decoder = ConditionalGaussian(hidden_dims[0], z_dims[0], z_dims[1])
+        self.likelihood = MlpBernoulliLikelihood(hidden_dims[1], z_dims[1],
+                                                 (digit_side, digit_side))
 
         self.graph = GraphicalModel()
-        self.graph.add_node("z_what", [], self.digit_features)
-        self.graph.add_node("X", ["z_what"], self.decoder)
+        self.graph.add_node("z1", [], self.prior)
+        self.graph.add_node("z2", ["z1"], self.decoder)
+        self.graph.add_node("X", ["z2"], self.likelihood)
 
     def forward(self, xs=None):
         B = xs.shape[0] if xs is not None else 1
         self.graph.clamp("X", xs)
-        self.digit_features.batch_shape = (B,)
+        self.prior.batch_shape = self.decoder.batch_shape = (B,)
+        self.likelihood.batch_shape = (B,)
         return self.graph.forward(X=xs)
 
     def guide(self, xs=None):
