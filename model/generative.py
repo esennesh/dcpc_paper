@@ -107,6 +107,66 @@ class DigitDecoder(MarkovKernel):
                                            self._digit_side)
         return dist.ContinuousBernoulli(estimate).to_event(3)
 
+class GaussianPrior(MarkovKernel):
+    def __init__(self, out_dim):
+        super().__init__()
+        self.batch_shape = ()
+
+        self.covariance = nn.Parameter(torch.eye(out_dim))
+
+    @property
+    def event_dim(self):
+        return 1
+
+    def forward(self) -> dist.Distribution:
+        loc = torch.zeros(*self.batch_shape, self.covariance.shape[-1],
+                          device=self.covariance.device)
+        scale = torch.tril(self.covariance).expand(*self.batch_shape,
+                                                   *self.covariance.shape)
+        return dist.MultivariateNormal(loc, scale_tril=scale)
+
+class ConditionalGaussian(MarkovKernel):
+    def __init__(self, hidden_dim, in_dim, out_dim, nonlinearity=nn.ReLU):
+        super().__init__()
+        self.batch_shape = ()
+
+        self.covariance = nn.Parameter(torch.eye(out_dim))
+        self.decoder = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim), nonlinearity(),
+            nn.Linear(hidden_dim, out_dim), nonlinearity()
+        )
+
+    @property
+    def event_dim(self):
+        return 1
+
+    def forward(self, hs: torch.Tensor) -> dist.Distribution:
+        P, B, _ = hs.shape
+
+        cov = self.covariance.expand(P, B, *self.covariance.shape)
+        return dist.MultivariateNormal(self.decoder(hs),
+                                       scale_tril=torch.tril(self.covariance))
+
+class MlpBernoulliLikelihood(MarkovKernel):
+    def __init__(self, hidden_dim, in_dim, out_shape, nonlinearity=nn.ReLU):
+        super().__init__()
+        self.batch_shape = ()
+        self._out_shape = out_shape
+
+        self.decoder = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim), nonlinearity(),
+            nn.Linear(hidden_dim, math.prod(self._out_shape)),
+        )
+
+    @property
+    def event_dim(self):
+        return 1 + len(self._out_shape)
+
+    def forward(self, hs: torch.Tensor) -> dist.Distribution:
+        P, B, _ = hs.shape
+        logits = self.decoder(hs).view(P, B, 1, *self._out_shape)
+        return dist.ContinuousBernoulli(logits=logits).to_event(self.event_dim)
+
 class GraphicalModel(BaseModel, pnn.PyroModule):
     def __init__(self):
         super().__init__()

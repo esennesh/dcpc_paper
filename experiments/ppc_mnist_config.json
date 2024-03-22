@@ -45,7 +45,7 @@
         "verbosity": 2,
         "type": "PpcTrainer",
         "args": {
-            "num_particles": 8
+            "num_particles": 32
         }
     }
 }
