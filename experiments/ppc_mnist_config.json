@@ -39,7 +39,7 @@
     },
     "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 500,
+        "epochs": 100,
         "monitor": "min val_loss",
         "save_dir": "saved/",
         "save_period": 50,
