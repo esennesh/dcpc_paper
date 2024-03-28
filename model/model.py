@@ -77,18 +77,20 @@ class BouncingMnistAsvi(BaseModel):
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
 class MnistPpc(BaseModel):
-    def __init__(self, digit_side=28, hidden_dims=[400, 400], z_dims=[10, 128],
+    def __init__(self, digit_side=28, z_dims=[20, 128, 256],
                  temperature=1e-3):
         super().__init__()
         self.prior = GaussianPrior(z_dims[0])
-        self.decoder = ConditionalGaussian(hidden_dims[0], z_dims[0], z_dims[1])
-        self.likelihood = MlpBernoulliLikelihood(hidden_dims[1], z_dims[1],
+        self.decoder1 = ConditionalGaussian(z_dims[0], z_dims[1])
+        self.decoder2 = ConditionalGaussian(z_dims[1], z_dims[2])
+        self.likelihood = MlpBernoulliLikelihood(z_dims[2],
                                                  (digit_side, digit_side))
 
         self.graph = PpcGraphicalModel(temperature)
         self.graph.add_node("z1", [], self.prior)
-        self.graph.add_node("z2", ["z1"], self.decoder)
-        self.graph.add_node("X", ["z2"], self.likelihood)
+        self.graph.add_node("z2", ["z1"], self.decoder1)
+        self.graph.add_node("z3", ["z2"], self.decoder2)
+        self.graph.add_node("X", ["z3"], self.likelihood)
 
     def forward(self, xs=None):
         if xs is not None:
@@ -96,7 +98,8 @@ class MnistPpc(BaseModel):
             self.graph.clamp("X", xs)
         else:
             B = 1
-        self.prior.batch_shape = self.decoder.batch_shape = (B,)
+        self.prior.batch_shape = (B,)
+        self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
         with clamp_graph(self.graph, X=xs) as graph:
             return graph.forward()
@@ -107,7 +110,8 @@ class MnistPpc(BaseModel):
             self.graph.clamp("X", xs)
         else:
             B = 1
-        self.prior.batch_shape = self.decoder.batch_shape = (B,)
+        self.prior.batch_shape = (B,)
+        self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
         with clamp_graph(self.graph, X=xs) as graph:
             return graph.guide()
