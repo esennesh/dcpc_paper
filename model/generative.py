@@ -148,14 +148,13 @@ class ConditionalGaussian(MarkovKernel):
                                        scale_tril=torch.tril(self.covariance))
 
 class MlpBernoulliLikelihood(MarkovKernel):
-    def __init__(self, hidden_dim, in_dim, out_shape, nonlinearity=nn.ReLU):
+    def __init__(self, in_dim, out_shape, nonlinearity=nn.ReLU):
         super().__init__()
         self.batch_shape = ()
         self._out_shape = out_shape
 
         self.decoder = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim), nonlinearity(),
-            nn.Linear(hidden_dim, math.prod(self._out_shape)),
+            nonlinearity(), nn.Linear(in_dim, math.prod(self._out_shape)),
         )
 
     @property
