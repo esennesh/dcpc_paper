@@ -127,14 +127,13 @@ class GaussianPrior(MarkovKernel):
         return dist.MultivariateNormal(loc, scale_tril=scale)
 
 class ConditionalGaussian(MarkovKernel):
-    def __init__(self, hidden_dim, in_dim, out_dim, nonlinearity=nn.ReLU):
+    def __init__(self, in_dim, out_dim, nonlinearity=nn.ReLU):
         super().__init__()
         self.batch_shape = ()
 
         self.covariance = nn.Parameter(torch.eye(out_dim))
         self.decoder = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim), nonlinearity(),
-            nn.Linear(hidden_dim, out_dim), nonlinearity()
+            nonlinearity(), nn.Linear(in_dim, out_dim),
         )
 
     @property
