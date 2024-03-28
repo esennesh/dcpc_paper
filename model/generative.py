@@ -113,6 +113,7 @@ class GaussianPrior(MarkovKernel):
         super().__init__()
         self.batch_shape = ()
 
+        self.loc = nn.Parameter(torch.zeros(out_dim))
         self.covariance = nn.Parameter(torch.eye(out_dim))
 
     @property
@@ -120,8 +121,7 @@ class GaussianPrior(MarkovKernel):
         return 1
 
     def forward(self) -> dist.Distribution:
-        loc = torch.zeros(*self.batch_shape, self.covariance.shape[-1],
-                          device=self.covariance.device)
+        loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
         return dist.MultivariateNormal(loc, scale_tril=scale)
