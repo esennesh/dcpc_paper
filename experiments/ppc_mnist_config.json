@@ -14,7 +14,7 @@
             "data_dir": "data/",
             "drop_last": false,
             "shuffle": true,
-            "batch_size": 512,
+            "batch_size": 256,
             "validation_split": 0.1,
             "num_workers": 2
         }
@@ -32,23 +32,23 @@
     "lr_scheduler": {
         "type": "ReduceLROnPlateau",
         "args": {
-          "patience": 100,
-          "cooldown": 25,
+          "patience": 10,
+          "cooldown": 5,
           "factor": 0.9
         }
     },
     "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 100,
+        "epochs": 1000,
         "monitor": "min val_loss",
         "save_dir": "saved/",
-        "save_period": 50,
+        "save_period": 10,
         "tensorboard": true,
         "verbosity": 2,
         "type": "PpcTrainer",
         "args": {
-            "num_particles": 32,
-            "num_sweeps": 4
+            "num_particles": 4,
+            "num_sweeps": 5
         }
     }
 }
