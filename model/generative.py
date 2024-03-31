@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import functools
 import math
 import networkx as nx
@@ -112,6 +113,7 @@ class GaussianPrior(MarkovKernel):
         super().__init__()
         self.batch_shape = ()
 
+        self.loc = nn.Parameter(torch.zeros(out_dim))
         self.covariance = nn.Parameter(torch.eye(out_dim))
 
     @property
@@ -119,21 +121,19 @@ class GaussianPrior(MarkovKernel):
         return 1
 
     def forward(self) -> dist.Distribution:
-        loc = torch.zeros(*self.batch_shape, self.covariance.shape[-1],
-                          device=self.covariance.device)
+        loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
         return dist.MultivariateNormal(loc, scale_tril=scale)
 
 class ConditionalGaussian(MarkovKernel):
-    def __init__(self, hidden_dim, in_dim, out_dim, nonlinearity=nn.ReLU):
+    def __init__(self, in_dim, out_dim, nonlinearity=nn.ReLU):
         super().__init__()
         self.batch_shape = ()
 
         self.covariance = nn.Parameter(torch.eye(out_dim))
         self.decoder = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim), nonlinearity(),
-            nn.Linear(hidden_dim, out_dim), nonlinearity()
+            nonlinearity(), nn.Linear(in_dim, out_dim),
         )
 
     @property
@@ -148,14 +148,13 @@ class ConditionalGaussian(MarkovKernel):
                                        scale_tril=torch.tril(self.covariance))
 
 class MlpBernoulliLikelihood(MarkovKernel):
-    def __init__(self, hidden_dim, in_dim, out_shape, nonlinearity=nn.ReLU):
+    def __init__(self, in_dim, out_shape, nonlinearity=nn.ReLU):
         super().__init__()
         self.batch_shape = ()
         self._out_shape = out_shape
 
         self.decoder = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim), nonlinearity(),
-            nn.Linear(hidden_dim, math.prod(self._out_shape)),
+            nonlinearity(), nn.Linear(in_dim, math.prod(self._out_shape)),
         )
 
     @property
@@ -187,16 +186,13 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
 
     def clear(self):
         for site in self.nodes:
-            for key in self.nodes[site]:
-                if key != "kernel":
-                    self.nodes[site][key] = None
+            self.unclamp(site)
 
-    def forward(self, **kwargs):
+    def forward(self):
         results = ()
-        for site, density in self.sweep():
-            obs = kwargs.get(site, None)
-            self.nodes[site]['is_observed'] = obs is not None
-            self.update(site, pyro.sample(site, density, obs=obs))
+        for site, kernel in self.sweep():
+            density = kernel(*self.parent_vals(site))
+            self.update(site, pyro.sample(site, density))
 
             if len(list(self.child_sites(site))) == 0:
                 results = results + (self.nodes[site]['value'],)
@@ -224,13 +220,11 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         return [site for site in self.nodes
                 if not self.nodes[site]['is_observed']]
 
-    def sweep(self, forward=True, **kwargs):
+    def sweep(self, forward=True, observations=True):
         for site in self.topological_sort(not forward):
-            kernel = self.kernel(site)
-            if forward:
-                yield site, kernel(*self.parent_vals(site))
-            else:
-                yield site, kernel
+            if self.nodes[site]["is_observed"] and not observations:
+                continue
+            yield site, self.kernel(site)
 
     @functools.cache
     def topological_sort(self, reverse=False):
@@ -239,6 +233,22 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
             nodes = list(reversed(nodes))
         return nodes
 
+    def unclamp(self, site):
+        for key in self.nodes[site]:
+            if key != "kernel":
+                self.nodes[site][key] = None
+
     def update(self, site, value):
         self.nodes[site]['value'] = value
         return self.nodes[site]['value']
+
+@contextmanager
+def clamp_graph(graph, **kwargs):
+    try:
+        for k, v in kwargs.items():
+            graph.clamp(k, v)
+        with pyro.condition(data=kwargs):
+            yield graph
+    finally:
+        for k in kwargs:
+            graph.update(k, None)

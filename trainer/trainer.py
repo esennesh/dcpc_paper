@@ -6,7 +6,7 @@ from pyro.infer import SVI, JitTraceGraph_ELBO, TraceGraph_ELBO
 import torch
 from torchvision.utils import make_grid
 from base import BaseTrainer
-from model.inference import ParticleDict, ppc
+from model.inference import ParticleDict
 from utils import inf_loop, MetricTracker
 import utils
 
@@ -137,7 +137,7 @@ class PpcTrainer(BaseTrainer):
     """
     def __init__(self, model, metric_ftns, optimizer, config,
                  data_loader, valid_data_loader=None, lr_scheduler=None,
-                 len_epoch=None, num_particles=4):
+                 len_epoch=None, num_particles=4, num_sweeps=1):
         resume = config.resume
         if config.resume is not None:
             config.resume = None
@@ -157,6 +157,7 @@ class PpcTrainer(BaseTrainer):
         self.lr_scheduler = lr_scheduler
         self.log_step = int(np.sqrt(data_loader.batch_size))
         self.num_particles = num_particles
+        self.num_sweeps = num_sweeps
         self.train_particles = ParticleDict(len(self.data_loader.sampler),
                                             num_particles)
         self.valid_particles = ParticleDict(len(self.valid_data_loader.sampler),
@@ -208,20 +209,17 @@ class PpcTrainer(BaseTrainer):
         self._load_particles(batch_indices, train)
 
         # Wasserstein-gradient updates to latent variables
-        with ppc(graph=self.model.graph,
-                 temperature=self.optimizer.pt_optim_args['lr']) as infer:
-            with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
-                self.model(data)
-            tp, tq = infer.get_traces()
-            tq.compute_log_prob()
-            tp.compute_log_prob()
-            log_weight = utils.log_joint(tp) - utils.log_joint(tq)
+        with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
+            for s in range(self.num_sweeps):
+                trace, log_weight = utils.importance(self.model.forward,
+                                                     self.model.guide, data)
 
-        loss = (-log_weight).mean()
+        loss = (-log_weight).sum(dim=-1).mean(dim=0)
         if train:
-            loss.backward()
+            (loss * len(data_loader.dataset)).backward()
             self.optimizer(pyro.get_param_store().values())
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
+        loss = loss / len(batch_indices)
 
         self._save_particles(batch_indices, train)
         return loss, log_weight.detach()
