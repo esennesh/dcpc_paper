@@ -6,9 +6,9 @@ import pyro.nn as pnn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from base import BaseModel
+from base import BaseModel, PartialMarkovKernel
 from .generative import *
-from .inference import asvi, mlp_amortizer
+from .inference import PpcGraphicalModel, asvi, mlp_amortizer
 
 class BouncingMnistAsvi(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
@@ -77,32 +77,48 @@ class BouncingMnistAsvi(BaseModel):
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
 class MnistPpc(BaseModel):
-    def __init__(self, digit_side=28, hidden_dims=[400, 400], z_dims=[10, 128]):
+    def __init__(self, digit_side=28, z_dims=[20, 128, 256],
+                 temperature=1e-3):
         super().__init__()
         self.prior = GaussianPrior(z_dims[0])
-        self.decoder = ConditionalGaussian(hidden_dims[0], z_dims[0], z_dims[1])
-        self.likelihood = MlpBernoulliLikelihood(hidden_dims[1], z_dims[1],
+        self.decoder1 = ConditionalGaussian(z_dims[0], z_dims[1])
+        self.decoder2 = ConditionalGaussian(z_dims[1], z_dims[2])
+        self.likelihood = MlpBernoulliLikelihood(z_dims[2],
                                                  (digit_side, digit_side))
 
-        self.graph = GraphicalModel()
+        self.graph = PpcGraphicalModel(temperature)
         self.graph.add_node("z1", [], self.prior)
-        self.graph.add_node("z2", ["z1"], self.decoder)
-        self.graph.add_node("X", ["z2"], self.likelihood)
+        self.graph.add_node("z2", ["z1"], self.decoder1)
+        self.graph.add_node("z3", ["z2"], self.decoder2)
+        self.graph.add_node("X", ["z3"], self.likelihood)
 
     def forward(self, xs=None):
-        B = xs.shape[0] if xs is not None else 1
-        self.graph.clamp("X", xs)
-        self.prior.batch_shape = self.decoder.batch_shape = (B,)
+        if xs is not None:
+            B = xs.shape[0]
+            self.graph.clamp("X", xs)
+        else:
+            B = 1
+        self.prior.batch_shape = (B,)
+        self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
-        return self.graph.forward(X=xs)
+        with clamp_graph(self.graph, X=xs) as graph:
+            return graph.forward()
 
     def guide(self, xs=None):
-        B = xs.shape[0] if xs is not None else 1
-        return self.graph.guide(batch_shape=(B,), X=xs)
+        if xs is not None:
+            B = xs.shape[0]
+            self.graph.clamp("X", xs)
+        else:
+            B = 1
+        self.prior.batch_shape = (B,)
+        self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
+        self.likelihood.batch_shape = (B,)
+        with clamp_graph(self.graph, X=xs) as graph:
+            return graph.guide()
 
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
-                 x_side=96, z_what_dim=10, z_where_dim=2):
+                 x_side=96, z_what_dim=10, z_where_dim=2, temperature=1e-3):
         super().__init__()
         self._num_digits = num_digits
         self._num_times = T
@@ -111,12 +127,11 @@ class BouncingMnistPpc(BaseModel):
         self.digit_features = DigitFeatures(num_digits, z_what_dim)
         self.digit_positions = DigitPositions(num_digits, z_where_dim)
 
-        self.graph = GraphicalModel()
+        self.graph = PpcGraphicalModel(temperature)
         self.graph.add_node("z_what", [], self.digit_features)
         for t in range(T):
             if t == 0:
-                where_kernel = lambda **kwargs: self.digit_positions(None,
-                                                                     **kwargs)
+                where_kernel = PartialMarkovKernel(self.digit_positions, None)
                 self.graph.add_node("z_where__0", [], where_kernel)
             else:
                 self.graph.add_node("z_where__%d" % t, ["z_where__%d" % (t-1)],
@@ -128,24 +143,16 @@ class BouncingMnistPpc(BaseModel):
         B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
         self.digit_features.batch_shape = (B,)
         self.digit_positions.batch_shape = (B,)
-        for t in range(T):
-            if xs is not None:
-                self.graph.clamp('X__%d' % t, xs[:, t])
-        clamps = {}
-        for t in range(T):
-            clamps['X__%d' % t] = xs[:, t] if xs is not None else None
-        recons = self.graph.forward(**clamps)
+        clamps = {"X__%d" % t: xs[:, t] for t in range(T) if xs is not None}
+        with clamp_graph(self.graph, **clamps) as graph:
+            recons = graph.forward()
         return torch.stack(recons, dim=2)
 
     def guide(self, xs=None):
         B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
         self.digit_features.batch_shape = (B,)
         self.digit_positions.batch_shape = (B,)
-        for t in range(T):
-            if xs is not None:
-                self.graph.clamp('X__%d' % t, xs[:, t])
-        clamps = {}
-        for t in range(T):
-            clamps['X__%d' % t] = xs[:, t] if xs is not None else None
-        recons = self.graph.guide(**clamps)
+        clamps = {"X__%d" % t: xs[:, t] for t in range(T) if xs is not None}
+        with clamp_graph(self.graph, **clamps) as graph:
+            recons = graph.guide()
         return torch.stack(recons, dim=2)
