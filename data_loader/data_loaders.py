@@ -45,6 +45,18 @@ class BouncingMNIST(datasets.VisionDataset):
     def __len__(self):
         return len(self.data)
 
+class MiniBouncingMnist(BouncingMNIST):
+    def _load_data(self):
+        data = []
+        for file in os.listdir(self.root):
+            if '.npy' not in file:
+                continue
+            file = os.path.join(self.root, file)
+            data.append(torch.from_numpy(np.load(file)).float())
+            break
+        result = torch.cat(data, dim=0)
+        return result
+
 class MnistDataLoader(BaseDataLoader):
     """
     MNIST data loading demo using BaseDataLoader
@@ -68,4 +80,17 @@ class BouncingMnistDataLoader(BaseDataLoader):
         ])
         self.data_dir = data_dir
         self.dataset = IndexedDataset(BouncingMNIST(self.data_dir, transform=trsfm))
+        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
+
+class MiniBouncingMnistDataLoader(BaseDataLoader):
+    """
+    Bouncing MNIST data loading using BaseDataLoader
+    """
+    def __init__(self, data_dir, batch_size, shuffle=False, validation_split=0.0, num_workers=1, training=True):
+        trsfm = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Lambda(lambda t: t.mT)
+        ])
+        self.data_dir = data_dir
+        self.dataset = IndexedDataset(MiniBouncingMnist(self.data_dir, transform=trsfm))
         super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
