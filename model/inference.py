@@ -117,10 +117,6 @@ class PpcGraphicalModel(GraphicalModel):
         z_next = _ancestor_index(particle_indices, z_next)
         log_cc = _ancestor_index(particle_indices, log_cc)
 
-        self.nodes[name]['errors'] = None
-        for child in self.child_sites(name):
-            self.nodes[child]['errors'] = None
-
         return dist.Delta(z_next, log_cc - log_Zcc, event_dim=event_dim)
 
     def guide(self):
@@ -148,6 +144,12 @@ class PpcGraphicalModel(GraphicalModel):
     @property
     def temperature(self):
         return self._temperature
+
+    def update(self, site, value):
+        self.nodes[site]['errors'] = None
+        for child in self.child_sites(site):
+            self.nodes[child]['errors'] = None
+        return super().update(site, value)
 
 def dist_params(dist: Distribution):
     return {k: v for k, v in dist.__dict__.items() if k[0] != '_'}
