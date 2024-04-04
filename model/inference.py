@@ -145,6 +145,9 @@ class PpcGraphicalModel(GraphicalModel):
                                                     *args)
         return log_sitecc
 
+    def set_temperature(self, temperature):
+        self._temperature = temperature
+
     @property
     def temperature(self):
         return self._temperature
