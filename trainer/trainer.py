@@ -2,6 +2,7 @@ import functools
 import math
 import numpy as np
 import pyro
+from pyro.optim import lr_scheduler
 from pyro.infer import SVI, JitTraceGraph_ELBO, TraceGraph_ELBO
 import torch
 from torchvision.utils import make_grid
@@ -220,6 +221,10 @@ class PpcTrainer(BaseTrainer):
             (loss * len(data_loader.dataset)).backward()
             self.optimizer(pyro.get_param_store().values())
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
+            if isinstance(self.optimizer, lr_scheduler.PyroLRScheduler):
+                self.optimizer.step(loss)
+                lr = list(self.optimizer.optim_objs.values())[0]._last_lr[0]
+                self.model.graph.set_temperature(lr)
         loss = loss / len(batch_indices)
 
         self._save_particles(batch_indices, train)
