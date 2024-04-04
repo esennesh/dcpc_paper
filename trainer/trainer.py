@@ -210,9 +210,10 @@ class PpcTrainer(BaseTrainer):
 
         # Wasserstein-gradient updates to latent variables
         with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
-            for s in range(self.num_sweeps):
-                trace, log_weight = utils.importance(self.model.forward,
-                                                     self.model.guide, data)
+            for s in range(self.num_sweeps - 1):
+                utils.importance(self.model.forward, self.model.guide, data)
+            trace, log_weight = utils.importance(self.model.forward,
+                                                 self.model.guide, data)
 
         loss = (-log_weight).sum(dim=-1).mean(dim=0)
         if train:
