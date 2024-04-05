@@ -74,8 +74,8 @@ class DigitsDecoder(MarkovKernel):
 
         digits = digits.view(P*B*K, self._digit_side, self._digit_side)
         frames = F.grid_sample(digits.unsqueeze(1), grid, mode='nearest',
-                               padding_mode='reflection', align_corners=True)
-        return frames.squeeze(1).view(P, B, K, self._x_side, self._x_side)
+                               align_corners=True).squeeze(1)
+        return frames.view(P, B, K, self._x_side, self._x_side)
 
     @property
     def event_dim(self):
