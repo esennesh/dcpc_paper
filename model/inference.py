@@ -105,8 +105,12 @@ class PpcGraphicalModel(GraphicalModel):
     def get_posterior(self, name: str, event_dim: int) -> Distribution:
         z = self.nodes[name]['value']
         error = self._complete_conditional_error(name)
-        proposal = dist.Normal(z + self.temperature * error,
-                               math.sqrt(2*self.temperature))
+
+        temperatures = torch.logspace(math.log10(self.temperature), 0.,
+                                      z.shape[0], device=error.device)
+        temperatures = temperatures.view(z.shape[0],
+                                         *((1,) * len(error.shape[1:])))
+        proposal = dist.Normal(z + temperatures*error, (2*temperatures).sqrt())
         proposal = proposal.to_event(event_dim)
         z_next = proposal.sample()
 
@@ -140,6 +144,9 @@ class PpcGraphicalModel(GraphicalModel):
                                                     self.nodes[child]['value'],
                                                     *args)
         return log_sitecc
+
+    def set_temperature(self, temperature):
+        self._temperature = temperature
 
     @property
     def temperature(self):
