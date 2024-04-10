@@ -60,6 +60,7 @@ class DigitsDecoder(MarkovKernel):
         scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
         self.register_buffer('scale', scale)
         self.translate = (x_side - digit_side) / digit_side
+        self._digits = {}
 
     def blit(self, digits, z_where):
         P, B, K, _ = z_where.shape
@@ -83,7 +84,9 @@ class DigitsDecoder(MarkovKernel):
 
     def forward(self, what, where) -> dist.Distribution:
         P, B, K, _ = where.shape
-        digits = self.decoder(what)
+        if what not in self._digits:
+            self._digits = {what: self.decoder(what)}
+        digits = self._digits[what]
         frame = torch.clamp(self.blit(digits, where).sum(-3), 0., 1.)
         return dist.ContinuousBernoulli(frame).to_event(2)
 
