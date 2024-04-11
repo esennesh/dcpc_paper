@@ -4,9 +4,7 @@
 
     "arch": {
         "type": "MnistPpc",
-        "args": {
-            "temperature": 0.001
-        }
+        "args": {}
     },
     "data_loader": {
         "type": "MnistDataLoader",
@@ -23,7 +21,7 @@
         "type": "Adam",
         "args": {
             "optim_args": {
-                "lr": 0.001,
+                "lr": 0.01,
                 "weight_decay": 0,
                 "amsgrad": true
             }
@@ -32,8 +30,8 @@
     "lr_scheduler": {
         "type": "ReduceLROnPlateau",
         "args": {
-          "patience": 10,
-          "cooldown": 5,
+          "patience": 100,
+          "cooldown": 50,
           "factor": 0.9
         }
     },
