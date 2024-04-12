@@ -240,9 +240,6 @@ class PpcTrainer(BaseTrainer):
             data = data.to(self.device)
             loss, log_weight = self._ppc_step(batch_indices, data)
 
-            if isinstance(self.optimizer, lr_scheduler.PyroLRScheduler):
-                self.optimizer.step(loss)
-
             self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
             self.train_metrics.update('loss', loss.item())
             for met in self.metric_ftns:
@@ -263,8 +260,8 @@ class PpcTrainer(BaseTrainer):
         if self.do_validation:
             val_log = self._valid_epoch(epoch)
             log.update(**{'val_'+k : v for k, v in val_log.items()})
-            if self.lr_scheduler is not None:
-                self.lr_scheduler.step(val_log['loss'])
+            if isinstance(self.optimizer, lr_scheduler.PyroLRScheduler):
+                self.optimizer.step(val_log['loss'])
 
         return log
 
