@@ -138,7 +138,7 @@ class PpcTrainer(BaseTrainer):
     """
     def __init__(self, model, metric_ftns, optimizer, config,
                  data_loader, valid_data_loader=None, lr_scheduler=None,
-                 len_epoch=None, num_particles=4, num_sweeps=1):
+                 len_epoch=None, num_particles=4):
         resume = config.resume
         if config.resume is not None:
             config.resume = None
@@ -158,7 +158,6 @@ class PpcTrainer(BaseTrainer):
         self.lr_scheduler = lr_scheduler
         self.log_step = int(np.sqrt(data_loader.batch_size))
         self.num_particles = num_particles
-        self.num_sweeps = num_sweeps
         self.train_particles = ParticleDict(len(self.data_loader.sampler),
                                             num_particles)
         self.valid_particles = ParticleDict(len(self.valid_data_loader.sampler),
@@ -211,9 +210,6 @@ class PpcTrainer(BaseTrainer):
 
         # Wasserstein-gradient updates to latent variables
         with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
-            for s in range(self.num_sweeps - 1):
-                utils.importance(self.model.forward, self.model.guide, data,
-                                 lr=self.lr)
             trace, log_weight = utils.importance(self.model.forward,
                                                  self.model.guide, data,
                                                  lr=self.lr)
