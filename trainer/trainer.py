@@ -221,10 +221,6 @@ class PpcTrainer(BaseTrainer):
             (loss * len(data_loader.dataset)).backward()
             self.optimizer(pyro.get_param_store().values())
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
-            if isinstance(self.optimizer, lr_scheduler.PyroLRScheduler):
-                self.optimizer.step(loss)
-                lr = list(self.optimizer.optim_objs.values())[0]._last_lr[0]
-                self.model.graph.set_temperature(lr)
         loss = loss / len(batch_indices)
 
         self._save_particles(batch_indices, train)
@@ -243,6 +239,9 @@ class PpcTrainer(BaseTrainer):
         for batch_idx, (data, target, batch_indices) in enumerate(self.data_loader):
             data = data.to(self.device)
             loss, log_weight = self._ppc_step(batch_indices, data)
+
+            if isinstance(self.optimizer, lr_scheduler.PyroLRScheduler):
+                self.optimizer.step(loss)
 
             self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
             self.train_metrics.update('loss', loss.item())
