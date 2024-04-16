@@ -12,7 +12,7 @@
             "data_dir": "data/",
             "drop_last": false,
             "shuffle": true,
-            "batch_size": 768,
+            "batch_size": 1024,
             "validation_split": 0.1,
             "num_workers": 2
         }
@@ -37,7 +37,7 @@
     },
     "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 50,
+        "epochs": 2000,
         "monitor": "min val_loss",
         "save_dir": "saved/",
         "save_period": 10,
@@ -45,8 +45,7 @@
         "verbosity": 2,
         "type": "PpcTrainer",
         "args": {
-            "num_particles": 4,
-            "num_sweeps": 5
+            "num_particles": 4
         }
     }
 }
