@@ -77,8 +77,7 @@ class BouncingMnistAsvi(BaseModel):
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
 class MnistPpc(BaseModel):
-    def __init__(self, digit_side=28, z_dims=[20, 128, 256],
-                 temperature=1e-3):
+    def __init__(self, digit_side=28, z_dims=[20, 128, 256]):
         super().__init__()
         self.prior = GaussianPrior(z_dims[0])
         self.decoder1 = ConditionalGaussian(z_dims[0], z_dims[1])
@@ -86,13 +85,13 @@ class MnistPpc(BaseModel):
         self.likelihood = MlpBernoulliLikelihood(z_dims[2],
                                                  (digit_side, digit_side))
 
-        self.graph = PpcGraphicalModel(temperature)
+        self.graph = PpcGraphicalModel()
         self.graph.add_node("z1", [], self.prior)
         self.graph.add_node("z2", ["z1"], self.decoder1)
         self.graph.add_node("z3", ["z2"], self.decoder2)
         self.graph.add_node("X", ["z3"], self.likelihood)
 
-    def forward(self, xs=None):
+    def forward(self, xs=None, **kwargs):
         if xs is not None:
             B = xs.shape[0]
             self.graph.clamp("X", xs)
@@ -104,7 +103,7 @@ class MnistPpc(BaseModel):
         with clamp_graph(self.graph, X=xs) as graph:
             return graph.forward()
 
-    def guide(self, xs=None):
+    def guide(self, xs=None, lr=1e-3):
         if xs is not None:
             B = xs.shape[0]
             self.graph.clamp("X", xs)
@@ -114,11 +113,11 @@ class MnistPpc(BaseModel):
         self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
         with clamp_graph(self.graph, X=xs) as graph:
-            return graph.guide()
+            return graph.guide(lr=lr)
 
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
-                 x_side=96, z_what_dim=10, z_where_dim=2, temperature=1e-3):
+                 x_side=96, z_what_dim=10, z_where_dim=2):
         super().__init__()
         self._num_digits = num_digits
         self._num_times = T
@@ -127,7 +126,7 @@ class BouncingMnistPpc(BaseModel):
         self.digit_features = DigitFeatures(num_digits, z_what_dim)
         self.digit_positions = DigitPositions(num_digits, z_where_dim)
 
-        self.graph = PpcGraphicalModel(temperature)
+        self.graph = PpcGraphicalModel()
         self.graph.add_node("z_what", [], self.digit_features)
         for t in range(T):
             if t == 0:
@@ -139,7 +138,7 @@ class BouncingMnistPpc(BaseModel):
             self.graph.add_node("X__%d" % t, ["z_what", "z_where__%d" % t],
                                 self.decoder)
 
-    def forward(self, xs=None):
+    def forward(self, xs=None, **kwargs):
         B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
         self.digit_features.batch_shape = (B,)
         self.digit_positions.batch_shape = (B,)
@@ -148,11 +147,11 @@ class BouncingMnistPpc(BaseModel):
             recons = graph.forward()
         return torch.stack(recons, dim=2)
 
-    def guide(self, xs=None):
+    def guide(self, xs=None, lr=1e-3):
         B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
         self.digit_features.batch_shape = (B,)
         self.digit_positions.batch_shape = (B,)
         clamps = {"X__%d" % t: xs[:, t] for t in range(T) if xs is not None}
         with clamp_graph(self.graph, **clamps) as graph:
-            recons = graph.guide()
+            recons = graph.guide(lr=lr)
         return torch.stack(recons, dim=2)

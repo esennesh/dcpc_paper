@@ -4,9 +4,7 @@
 
     "arch": {
         "type": "MnistPpc",
-        "args": {
-            "temperature": 0.001
-        }
+        "args": {}
     },
     "data_loader": {
         "type": "MnistDataLoader",
@@ -14,7 +12,7 @@
             "data_dir": "data/",
             "drop_last": false,
             "shuffle": true,
-            "batch_size": 768,
+            "batch_size": 1024,
             "validation_split": 0.1,
             "num_workers": 2
         }
@@ -23,7 +21,7 @@
         "type": "Adam",
         "args": {
             "optim_args": {
-                "lr": 0.001,
+                "lr": 0.01,
                 "weight_decay": 0,
                 "amsgrad": true
             }
@@ -32,14 +30,14 @@
     "lr_scheduler": {
         "type": "ReduceLROnPlateau",
         "args": {
-          "patience": 10,
-          "cooldown": 5,
+          "patience": 100,
+          "cooldown": 50,
           "factor": 0.9
         }
     },
     "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 50,
+        "epochs": 2000,
         "monitor": "min val_loss",
         "save_dir": "saved/",
         "save_period": 10,
@@ -47,8 +45,7 @@
         "verbosity": 2,
         "type": "PpcTrainer",
         "args": {
-            "num_particles": 4,
-            "num_sweeps": 5
+            "num_particles": 4
         }
     }
 }
