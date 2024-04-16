@@ -1,8 +1,8 @@
 import torch
 from abc import abstractmethod
 from numpy import inf
+from pyro.optim import lr_scheduler
 from logger import TensorboardWriter
-
 
 class BaseTrainer:
     """
@@ -56,6 +56,15 @@ class BaseTrainer:
         self.device, device_ids = self._prepare_device(self.config['n_gpu'])
         self.model = self.model.to(self.device)
         return device_ids
+
+    @property
+    def lr(self):
+        if self.optimizer.optim_objs:
+            optimizer = list(self.optimizer.optim_objs.values())[0]
+            if isinstance(self.optimizer, lr_scheduler.PyroLRScheduler):
+                optimizer = optimizer.optimizer
+            return optimizer.param_groups[0]['lr']
+        return self.optimizer.pt_optim_args['lr']
 
     @abstractmethod
     def _train_epoch(self, epoch):

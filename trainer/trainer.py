@@ -138,7 +138,7 @@ class PpcTrainer(BaseTrainer):
     """
     def __init__(self, model, metric_ftns, optimizer, config,
                  data_loader, valid_data_loader=None, lr_scheduler=None,
-                 len_epoch=None, num_particles=4, num_sweeps=1):
+                 len_epoch=None, num_particles=4):
         resume = config.resume
         if config.resume is not None:
             config.resume = None
@@ -158,7 +158,6 @@ class PpcTrainer(BaseTrainer):
         self.lr_scheduler = lr_scheduler
         self.log_step = int(np.sqrt(data_loader.batch_size))
         self.num_particles = num_particles
-        self.num_sweeps = num_sweeps
         self.train_particles = ParticleDict(len(self.data_loader.sampler),
                                             num_particles)
         self.valid_particles = ParticleDict(len(self.valid_data_loader.sampler),
@@ -211,21 +210,15 @@ class PpcTrainer(BaseTrainer):
 
         # Wasserstein-gradient updates to latent variables
         with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
-            for s in range(self.num_sweeps - 1):
-                utils.importance(self.model.forward, self.model.guide, data)
             trace, log_weight = utils.importance(self.model.forward,
-                                                 self.model.guide, data)
+                                                 self.model.guide, data,
+                                                 lr=self.lr)
 
-        loss = (-log_weight).sum(dim=-1).mean(dim=0)
+        loss = -log_weight.mean()
         if train:
             (loss * len(data_loader.dataset)).backward()
             self.optimizer(pyro.get_param_store().values())
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
-            if isinstance(self.optimizer, lr_scheduler.PyroLRScheduler):
-                self.optimizer.step(loss)
-                lr = list(self.optimizer.optim_objs.values())[0]._last_lr[0]
-                self.model.graph.set_temperature(lr)
-        loss = loss / len(batch_indices)
 
         self._save_particles(batch_indices, train)
         return loss, log_weight.detach()
@@ -264,8 +257,8 @@ class PpcTrainer(BaseTrainer):
         if self.do_validation:
             val_log = self._valid_epoch(epoch)
             log.update(**{'val_'+k : v for k, v in val_log.items()})
-            if self.lr_scheduler is not None:
-                self.lr_scheduler.step(val_log['loss'])
+            if isinstance(self.optimizer, lr_scheduler.PyroLRScheduler):
+                self.optimizer.step(val_log['loss'])
 
         return log
 

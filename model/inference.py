@@ -72,10 +72,6 @@ class ParticleDict(nn.ParameterDict):
                                val.to(self[key].device))
 
 class PpcGraphicalModel(GraphicalModel):
-    def __init__(self, temperature=1e-3):
-        self._temperature = temperature
-        super().__init__()
-
     def _complete_conditional_error(self, site):
         error = self._site_errors(site)[0]
         for child in self.child_sites(site):
@@ -102,15 +98,11 @@ class PpcGraphicalModel(GraphicalModel):
         return self.nodes[site]['errors']
 
     @torch.no_grad()
-    def get_posterior(self, name: str, event_dim: int) -> Distribution:
+    def get_posterior(self, name: str, event_dim: int, lr=1e-3) -> Distribution:
         z = self.nodes[name]['value']
         error = self._complete_conditional_error(name)
 
-        temperatures = torch.logspace(math.log10(self.temperature), 0.,
-                                      z.shape[0], device=error.device)
-        temperatures = temperatures.view(z.shape[0],
-                                         *((1,) * len(error.shape[1:])))
-        proposal = dist.Normal(z + temperatures*error, (2*temperatures).sqrt())
+        proposal = dist.Normal(z + lr * error, math.sqrt(2 * lr))
         proposal = proposal.to_event(event_dim)
         z_next = proposal.sample()
 
@@ -123,11 +115,11 @@ class PpcGraphicalModel(GraphicalModel):
 
         return dist.Delta(z_next, log_cc - log_Zcc, event_dim=event_dim)
 
-    def guide(self):
+    def guide(self, lr=1e-3):
         results = ()
         for site, kernel in self.sweep(forward=False):
             if not self.nodes[site]["is_observed"]:
-                posterior = self.get_posterior(site, kernel.event_dim)
+                posterior = self.get_posterior(site, kernel.event_dim, lr=lr)
                 self.update(site, pyro.sample(site, posterior))
 
             if len(list(self.child_sites(site))) == 0:
@@ -144,13 +136,6 @@ class PpcGraphicalModel(GraphicalModel):
                                                     self.nodes[child]['value'],
                                                     *args)
         return log_sitecc
-
-    def set_temperature(self, temperature):
-        self._temperature = temperature
-
-    @property
-    def temperature(self):
-        return self._temperature
 
     def update(self, site, value):
         self.nodes[site]['errors'] = None
