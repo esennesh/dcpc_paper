@@ -65,7 +65,7 @@ class DigitsDecoder(MarkovKernel):
     def blit(self, digits, z_where):
         P, B, K, _ = z_where.shape
         affine_p1 = self.scale.repeat(P, B, K, 1, 1)
-        affine_p2 = z_where.unsqueeze(-1) * self.translate
+        affine_p2 = torch.clamp(z_where.unsqueeze(-1) * self.translate, -1, 1)
         affine_p2[:, :, :, 0, :] = -affine_p2[:, :, :, 0, :]
         grid = F.affine_grid(
             torch.cat((affine_p1, affine_p2), -1).view(P*B*K, 2, 3),
