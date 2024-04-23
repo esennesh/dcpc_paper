@@ -102,7 +102,9 @@ class PpcGraphicalModel(GraphicalModel):
         z = self.nodes[name]['value']
         error = self._complete_conditional_error(name)
 
-        proposal = dist.Normal(z + lr * error, math.sqrt(2 * lr))
+        temps = torch.arange(z.shape[0], device=z.device) + 1
+        temps = temps.reshape(z.shape[0], *((1,) * len(z.shape[1:])))
+        proposal = dist.Normal(z + lr * error, (2 * lr * temps).sqrt())
         proposal = proposal.to_event(event_dim)
         z_next = proposal.sample()
 
