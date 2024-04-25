@@ -170,6 +170,20 @@ class MlpBernoulliLikelihood(MarkovKernel):
         logits = self.decoder(hs).view(P, B, 1, *self._out_shape)
         return dist.ContinuousBernoulli(logits=logits).to_event(self.event_dim)
 
+class DiffusionPrior(MarkovKernel):
+    def __init__(self, channels=3, img_side=128):
+        super().__init__()
+        self.batch_shape = ()
+        self.register_buffer('loc', torch.zeros(channels, img_side, img_side))
+        self.register_buffer('scale', torch.ones(channels, img_side, img_side))
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self) -> dist.Distribution:
+        return dist.Normal(self.loc, self.scale).to_event(3)
+
 class DiffusionStep(MarkovKernel):
     def __init__(self, betas, dim_mults=(1, 2, 4, 8), flash_attn=True,
                  hidden_dim=64):
