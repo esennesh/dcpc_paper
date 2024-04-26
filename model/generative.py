@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from denoising_diffusion_pytorch import Unet
 import functools
 import math
 import networkx as nx
@@ -168,6 +169,42 @@ class MlpBernoulliLikelihood(MarkovKernel):
         P, B, _ = hs.shape
         logits = self.decoder(hs).view(P, B, 1, *self._out_shape)
         return dist.ContinuousBernoulli(logits=logits).to_event(self.event_dim)
+
+class DiffusionPrior(MarkovKernel):
+    def __init__(self, channels=3, img_side=128):
+        super().__init__()
+        self.batch_shape = ()
+        self.register_buffer('loc', torch.zeros(channels, img_side, img_side))
+        self.register_buffer('scale', torch.ones(channels, img_side, img_side))
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self) -> dist.Distribution:
+        return dist.Normal(self.loc, self.scale).to_event(3)
+
+class DiffusionStep(MarkovKernel):
+    def __init__(self, betas, dim_mults=(1, 2, 4, 8), flash_attn=True,
+                 hidden_dim=64):
+        super().__init__()
+        self.batch_shape = ()
+        self.register_buffer('betas', betas.to(dtype=torch.float))
+
+        self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
+                         flash_attn=flash_attn)
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self, xs_prev: torch.Tensor, t=0) -> dist.Distribution:
+        P, B, C, W, H = xs_prev.shape
+        loc = self.unet(xs_prev.view(P*B, C, W, H),
+                        torch.tensor(t, device=xs_prev.device,
+                                     dtype=torch.long).repeat(P*B))
+        return dist.Normal(loc.view(*xs_prev.shape),
+                           self.betas[t]).to_event(3)
 
 class GraphicalModel(BaseModel, pnn.PyroModule):
     def __init__(self):
