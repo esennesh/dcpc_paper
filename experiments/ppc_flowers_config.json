@@ -1,0 +1,56 @@
+{
+    "name": "FlowersDiffusion_Ppc",
+    "n_gpu": 1,
+
+    "arch": {
+        "type": "DiffusionPpc",
+        "args": {
+            "flash_attn": false,
+            "img_side": 64,
+            "T": 12
+        }
+    },
+    "data_loader": {
+        "type": "Flowers102DataLoader",
+        "args":{
+            "data_dir": "data/",
+            "drop_last": false,
+            "shuffle": true,
+            "batch_size": 8,
+            "validation_split": 0.1,
+            "num_workers": 2,
+            "img_side": 64
+        }
+    },
+    "optimizer": {
+        "type": "Adam",
+        "args": {
+            "optim_args": {
+                "lr": 8.5e-5,
+                "weight_decay": 0,
+                "amsgrad": true
+            }
+        }
+    },
+    "lr_scheduler": {
+        "type": "ReduceLROnPlateau",
+        "args": {
+          "patience": 100,
+          "cooldown": 50,
+          "factor": 0.9
+        }
+    },
+    "metrics": ["ess", "log_marginal"],
+    "trainer": {
+        "epochs": 100,
+        "monitor": "min val_loss",
+        "save_dir": "saved/",
+        "save_period": 10,
+        "tensorboard": true,
+        "verbosity": 2,
+        "type": "PpcTrainer",
+        "args": {
+            "num_particles": 2
+        }
+    }
+}
