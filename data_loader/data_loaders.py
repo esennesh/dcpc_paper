@@ -110,3 +110,13 @@ class Flowers102DataLoader(BaseDataLoader):
         self.data_dir = data_dir
         self.dataset = IndexedDataset(datasets.Flowers102(self.data_dir, split="train" if training else "test", download=True, transform=trsfm))
         super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
+
+    @property
+    def reverse_transform(self):
+        return transforms.Compose([
+            transforms.Lambda(lambda t: (t + 1) / 2),
+            transforms.Lambda(lambda t: t.permute(1, 2, 0)), # CHW to HWC
+            transforms.Lambda(lambda t: t * 255.),
+            transforms.Lambda(lambda t: t.numpy().astype(np.uint8)),
+            transforms.ToPILImage(),
+        ])
