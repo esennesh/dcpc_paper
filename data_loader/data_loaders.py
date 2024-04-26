@@ -94,3 +94,29 @@ class MiniBouncingMnistDataLoader(BaseDataLoader):
         self.data_dir = data_dir
         self.dataset = IndexedDataset(MiniBouncingMnist(self.data_dir, transform=trsfm))
         super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
+
+class Flowers102DataLoader(BaseDataLoader):
+    """
+    Oxford 102 Flower data loading use BaseDataLoader
+    """
+    def __init__(self, data_dir, batch_size, img_side=128, shuffle=False, validation_split=0.0, num_workers=1, training=True, drop_last=False):
+        trsfm = transforms.Compose([
+            transforms.Resize(img_side),
+            transforms.CenterCrop(img_side),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(), # turn into torch Tensor of shape CHW, divide by 255
+            transforms.Lambda(lambda t: (t * 2) - 1),
+        ])
+        self.data_dir = data_dir
+        self.dataset = IndexedDataset(datasets.Flowers102(self.data_dir, split="train" if training else "test", download=True, transform=trsfm))
+        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
+
+    @property
+    def reverse_transform(self):
+        return transforms.Compose([
+            transforms.Lambda(lambda t: (t + 1) / 2),
+            transforms.Lambda(lambda t: t.permute(1, 2, 0)), # CHW to HWC
+            transforms.Lambda(lambda t: t * 255.),
+            transforms.Lambda(lambda t: t.numpy().astype(np.uint8)),
+            transforms.ToPILImage(),
+        ])

@@ -1,4 +1,5 @@
 import math
+from denoising_diffusion_pytorch.denoising_diffusion_pytorch import sigmoid_beta_schedule
 import networkx as nx
 import pyro
 import pyro.distributions as dist
@@ -155,3 +156,37 @@ class BouncingMnistPpc(BaseModel):
         with clamp_graph(self.graph, **clamps) as graph:
             recons = graph.guide(lr=lr)
         return torch.stack(recons, dim=2)
+
+class DiffusionPpc(BaseModel):
+    def __init__(self, channels=3, dim_mults=(1, 2, 4, 8), flash_attn=True,
+                 hidden_dim=64, img_side=128, T=100):
+        super().__init__()
+        self._channels = channels
+        self._img_side = img_side
+        self._num_times = T
+
+        self.diffusion = DiffusionStep(sigmoid_beta_schedule(T),
+                                       dim_mults=dim_mults,
+                                       flash_attn=flash_attn,
+                                       hidden_dim=hidden_dim)
+        self.prior = DiffusionPrior(channels, img_side)
+
+        self.graph = PpcGraphicalModel()
+        self.graph.add_node("X__%d" % T, [], self.prior)
+        for t in reversed(range(T)):
+            step_kernel = PartialMarkovKernel(self.diffusion, t=t)
+            self.graph.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
+
+    def forward(self, xs=None, **kwargs):
+        B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
+        self.diffusion.batch_shape = (B,)
+        self.prior.batch_shape = (B,)
+        with clamp_graph(self.graph, X__0=xs) as graph:
+            return graph.forward()
+
+    def guide(self, xs=None, lr=1e-4):
+        B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
+        self.diffusion.batch_shape = (B,)
+        self.prior.batch_shape = (B,)
+        with clamp_graph(self.graph, X__0=xs) as graph:
+            return graph.guide(lr=lr)
