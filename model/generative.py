@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, MarkovKernel
+from utils import ScoreNetwork0
 
 class DigitPositions(MarkovKernel):
     def __init__(self, num_digits=3, z_where_dim=2):
@@ -185,14 +186,17 @@ class DiffusionPrior(MarkovKernel):
         return dist.Normal(self.loc, self.scale).to_event(3)
 
 class DiffusionStep(MarkovKernel):
-    def __init__(self, betas, dim_mults=(1, 2, 4, 8), flash_attn=True,
-                 hidden_dim=64):
+    def __init__(self, betas, x_side=128, thick=True, dim_mults=(1, 2, 4, 8),
+                 flash_attn=True, hidden_dim=64):
         super().__init__()
         self.batch_shape = ()
         self.register_buffer('betas', betas.to(dtype=torch.float))
 
-        self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
-                         flash_attn=flash_attn)
+        if thick:
+            self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
+                             flash_attn=flash_attn)
+        else:
+            self.unet = ScoreNetwork0(x_side)
 
     @property
     def event_dim(self):
