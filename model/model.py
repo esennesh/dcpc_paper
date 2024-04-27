@@ -158,8 +158,8 @@ class BouncingMnistPpc(BaseModel):
         return torch.stack(recons, dim=2)
 
 class DiffusionPpc(BaseModel):
-    def __init__(self, channels=3, dim_mults=(1, 2, 4, 8), flash_attn=True,
-                 hidden_dim=64, img_side=128, T=100):
+    def __init__(self, channels=3, dim_mults=(1, 2, 4, 8), thick=True,
+                 flash_attn=True, hidden_dim=64, img_side=128, T=100):
         super().__init__()
         self._channels = channels
         self._img_side = img_side
@@ -168,7 +168,8 @@ class DiffusionPpc(BaseModel):
         self.diffusion = DiffusionStep(sigmoid_beta_schedule(T),
                                        dim_mults=dim_mults,
                                        flash_attn=flash_attn,
-                                       hidden_dim=hidden_dim)
+                                       hidden_dim=hidden_dim,
+                                       thick=thick, x_side=img_side)
         self.prior = DiffusionPrior(channels, img_side)
 
         self.graph = PpcGraphicalModel()
