@@ -12,11 +12,11 @@ class ScoreNetwork0(torch.nn.Module):
     def __init__(self, x_side=28):
         super().__init__()
         self._x_side = x_side
-        nch = 2
+        nch = 3
         chs = [32, 64, 128, 256, 256]
         self._convs = torch.nn.ModuleList([
             torch.nn.Sequential(
-                torch.nn.Conv2d(2, chs[0], kernel_size=3, padding=1),  # (batch, ch, x_side, x_side)
+                torch.nn.Conv2d(nch+1, chs[0], kernel_size=3, padding=1),  # (batch, ch, x_side, x_side)
                 torch.nn.LogSigmoid(),  # (batch, 8, x_side, x_side)
             ),
             torch.nn.Sequential(
@@ -30,7 +30,7 @@ class ScoreNetwork0(torch.nn.Module):
                 torch.nn.LogSigmoid(),  # (batch, 32, 7, 7)
             ),
             torch.nn.Sequential(
-                torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=1),  # (batch, ch, 4, 4)
+                torch.nn.MaxPool2d(kernel_size=2, stride=2),  # (batch, ch, 4, 4)
                 torch.nn.Conv2d(chs[2], chs[3], kernel_size=3, padding=1),  # (batch, ch, 4, 4)
                 torch.nn.LogSigmoid(),  # (batch, 64, 4, 4)
             ),
@@ -48,7 +48,7 @@ class ScoreNetwork0(torch.nn.Module):
             ),
             torch.nn.Sequential(
                 # input is the output from the above sequential concated with the output from convs[3]
-                torch.nn.ConvTranspose2d(chs[3] * 2, chs[2], kernel_size=3, stride=2, padding=1, output_padding=0),  # (batch, 32, 7, 7)
+                torch.nn.ConvTranspose2d(chs[3] * 2, chs[2], kernel_size=3, stride=2, padding=1, output_padding=1),  # (batch, 32, 7, 7)
                 torch.nn.LogSigmoid(),
             ),
             torch.nn.Sequential(
@@ -65,14 +65,14 @@ class ScoreNetwork0(torch.nn.Module):
                 # input is the output from the above sequential concated with the output from convs[0]
                 torch.nn.Conv2d(chs[0] * 2, chs[0], kernel_size=3, padding=1),  # (batch, chs[0], x_side, x_side)
                 torch.nn.LogSigmoid(),
-                torch.nn.Conv2d(chs[0], 1, kernel_size=3, padding=1),  # (batch, 1, x_side, x_side)
+                torch.nn.Conv2d(chs[0], nch, kernel_size=3, padding=1),  # (batch, 1, x_side, x_side)
             ),
         ])
 
     def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         # x: (..., ch0 * 28 * 28), t: (..., 1)
-        x2 = torch.reshape(x, (*x.shape[:-1], 1, self._x_side, self._x_side))  # (..., ch0, x_side, x_side)
-        tt = t[..., None, None].expand(*t.shape[:-1], 1, self._x_side, self._x_side)  # (..., 1, x_side, x_side)
+        x2 = torch.reshape(x, (*x.shape[:-3], 3, self._x_side, self._x_side))  # (..., ch0, x_side, x_side)
+        tt = t[..., None, None, None].expand(t.shape[0], 1, self._x_side, self._x_side)  # (..., 3, x_side, x_side)
         x2t = torch.cat((x2, tt), dim=-3)
         signal = x2t
         signals = []
@@ -87,7 +87,7 @@ class ScoreNetwork0(torch.nn.Module):
             else:
                 signal = torch.cat((signal, signals[-i]), dim=-3)
                 signal = tconv(signal)
-        signal = torch.reshape(signal, (*signal.shape[:-3], -1))  # (..., 1 * 28 * 28)
+        signal = signal.reshape(*x2.shape)  # (..., 1 * 28 * 28)
         return signal
 
 
