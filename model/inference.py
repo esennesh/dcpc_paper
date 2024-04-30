@@ -7,6 +7,7 @@ import torch
 import torch.distributions.constraints as constraints
 from torch.distributions import biject_to, transform_to
 import torch.nn as nn
+import torch.nn.functional as F
 
 import pyro
 import pyro.distributions as dist
@@ -22,9 +23,22 @@ from base import BaseModel
 from .generative import GraphicalModel
 import utils
 
+def systematic_resample(log_weights):
+    P, B = log_weights.shape
+
+    positions = (torch.rand((B, P), device=log_weights.device) +\
+                 torch.arange(P, device=log_weights.device).unsqueeze(0)) / P
+    weights = F.softmax(log_weights, dim=0)
+    cumsums = torch.cumsum(weights.transpose(0, 1), dim=1)
+    (normalizers, _) = torch.max(input=cumsums, dim=1, keepdim=True)
+    cumsums = cumsums / normalizers ## B * S
+
+    index = torch.searchsorted(cumsums, positions)
+    assert index.shape == (B, P), "ERROR! systematic resampling resulted unexpected index shape."
+    return index.transpose(0, 1)
+
 def _resample(log_weights, estimate_normalizer=False):
-    discrete = dist.Categorical(logits=torch.swapaxes(log_weights, 0, -1))
-    indices = discrete.sample(sample_shape=torch.Size([log_weights.shape[0]]))
+    indices = systematic_resample(log_weights)
     if estimate_normalizer:
         log_normalizer = utils.logmeanexp(log_weights)
         return indices, log_normalizer
@@ -102,7 +116,9 @@ class PpcGraphicalModel(GraphicalModel):
         z = self.nodes[name]['value']
         error = self._complete_conditional_error(name)
 
-        proposal = dist.Normal(z + lr * error, math.sqrt(2 * lr))
+        temps = torch.arange(z.shape[0], device=z.device) + 1
+        temps = temps.reshape(z.shape[0], *((1,) * len(z.shape[1:])))
+        proposal = dist.Normal(z + lr * error, (2 * lr * temps).sqrt())
         proposal = proposal.to_event(event_dim)
         z_next = proposal.sample()
 
