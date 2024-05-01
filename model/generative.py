@@ -183,7 +183,9 @@ class DiffusionPrior(MarkovKernel):
         return 3
 
     def forward(self) -> dist.Distribution:
-        return dist.Normal(self.loc, self.scale).to_event(3)
+        loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
+        scale = self.scale.expand(*self.batch_shape, *self.scale.shape)
+        return dist.Normal(loc, scale).to_event(3)
 
 class DiffusionStep(MarkovKernel):
     def __init__(self, betas, x_side=128, thick=True, dim_mults=(1, 2, 4, 8),
