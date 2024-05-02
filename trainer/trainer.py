@@ -187,6 +187,10 @@ class PpcTrainer(BaseTrainer):
         self.valid_particles = self.valid_particles.to(self.device)
         super().train(profiler=profiler)
 
+    def _clear_particles(self):
+        for site in self.model.graph.nodes:
+            self.model.graph.unclamp(site)
+
     def _initialize_particles(self, batch_indices, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
         with pyro.plate_stack("initialize", (self.num_particles, len(data))):
