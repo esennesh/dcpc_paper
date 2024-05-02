@@ -217,6 +217,39 @@ class DiffusionStep(MarkovKernel):
         return dist.Normal(F.tanh(loc.view(*xs_prev.shape)),
                            self.betas[t]).to_event(3)
 
+class ConvolutionalDecoder(MarkovKernel):
+    def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
+        super().__init__()
+        self.batch_shape = ()
+        self._channels = channels
+        self._img_side = img_side
+
+        self.linear = nn.Sequential(nn.Linear(z_dim, hidden_dim), nn.SiLU())
+        self.convs = nn.Sequential(
+            nn.ConvTranspose2d(hidden_dim, 64, 4, 1, 0), nn.SiLU(),
+            nn.ConvTranspose2d(64, 64, 4, 2, 1), nn.SiLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.SiLU(),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 64 else
+            (nn.ConvTranspose2d(32, 32, 3, 1, 0) if img_side == 28 else
+             nn.ConvTranspose2d(32, 32, 3, 1, 1)),
+            nn.SiLU(),
+            nn.ConvTranspose2d(32, channels, 4, 2, 1)
+        )
+        self.log_scale = nn.Parameter(torch.zeros(channels, img_side, img_side))
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self, zs: torch.Tensor) -> dist.Distribution:
+        P, B, _ = zs.shape
+        hs = self.linear(zs)
+        hs = hs.view(P*B, *hs.shape[2:], 1, 1)
+        loc = self.convs(hs).view(P, B, self._channels, self._img_side,
+                                  self._img_side)
+        scale = self.log_scale.exp().expand(P, B, *self.log_scale.shape)
+        return dist.Normal(loc, scale).to_event(3)
+
 class GraphicalModel(BaseModel, pnn.PyroModule):
     def __init__(self):
         super().__init__()
