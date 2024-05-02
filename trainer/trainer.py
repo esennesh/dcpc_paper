@@ -221,7 +221,7 @@ class PpcTrainer(BaseTrainer):
             trace, log_weight = utils.importance(self.model.forward,
                                                  self.model.guide, data,
                                                  lr=self.lr)
-            log_joint = utils.log_joint(trace)
+            trace.detach_()
 
         loss = -log_weight.mean()
         if train:
@@ -230,7 +230,7 @@ class PpcTrainer(BaseTrainer):
             pyro.infer.util.zero_grads(pyro.get_param_store().values())
 
         self._save_particles(batch_indices, train)
-        return loss, log_weight.detach(), log_joint.detach()
+        return loss, trace, log_weight.detach()
 
     def _train_epoch(self, epoch):
         """
