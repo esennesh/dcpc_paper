@@ -114,12 +114,16 @@ class DigitDecoder(MarkovKernel):
         return dist.ContinuousBernoulli(estimate).to_event(3)
 
 class GaussianPrior(MarkovKernel):
-    def __init__(self, out_dim):
+    def __init__(self, out_dim, train_params=True):
         super().__init__()
         self.batch_shape = ()
 
-        self.loc = nn.Parameter(torch.zeros(out_dim))
-        self.covariance = nn.Parameter(torch.eye(out_dim))
+        if train_params:
+            self.loc = nn.Parameter(torch.zeros(out_dim))
+            self.covariance = nn.Parameter(torch.eye(out_dim))
+        else:
+            self.register_buffer("loc", torch.zeros(out_dim))
+            self.register_buffer("covariance", torch.eye(out_dim))
 
     @property
     def event_dim(self):
