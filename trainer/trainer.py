@@ -244,15 +244,12 @@ class PpcTrainer(BaseTrainer):
         self.train_metrics.reset()
         for batch_idx, (data, target, batch_indices) in enumerate(self.data_loader):
             data = data.to(self.device)
-            loss, log_weight, log_joint = self._ppc_step(batch_indices, data)
+            loss, trace, log_weight = self._ppc_step(batch_indices, data)
 
             self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
             self.train_metrics.update('loss', loss.item())
             for met in self.metric_ftns:
-                if met.__name__ == 'log_joint':
-                    self.train_metrics.update(met.__name__, met(log_joint))
-                else:
-                    self.train_metrics.update(met.__name__, met(log_weight))
+                self.train_metrics.update(met.__name__, met(trace, log_weight))
 
             if batch_idx % self.log_step == 0:
                 self.logger.debug('Train Epoch: {} {} Loss: {:.6f}'.format(
@@ -289,15 +286,12 @@ class PpcTrainer(BaseTrainer):
         with torch.no_grad():
             for batch_idx, (data, target, batch_indices) in enumerate(self.valid_data_loader):
                 data = data.to(self.device)
-                loss, log_weight, log_joint = self._ppc_step(batch_indices, data, False)
+                loss, trace, log_weight = self._ppc_step(batch_indices, data, False)
 
                 self.writer.set_step((epoch - 1) * len(self.valid_data_loader) + batch_idx, 'valid')
                 self.valid_metrics.update('loss', loss.item())
                 for met in self.metric_ftns:
-                    if met.__name__ == 'log_joint':
-                        self.valid_metrics.update(met.__name__, met(log_joint))
-                    else:
-                        self.valid_metrics.update(met.__name__, met(log_weight))
+                    self.valid_metrics.update(met.__name__, met(trace, log_weight))
 
                 if data.shape[1] == 1:
                     self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
