@@ -35,7 +35,7 @@
           "factor": 0.9
         }
     },
-    "metrics": ["ess", "log_marginal"],
+    "metrics": ["ess", "log_marginal", "log_joint"],
     "trainer": {
         "epochs": 2000,
         "monitor": "min val_loss",
