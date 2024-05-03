@@ -5,9 +5,9 @@
     "arch": {
         "type": "DiffusionPpc",
         "args": {
-            "flash_attn": false,
             "img_side": 64,
-            "T": 12
+            "T": 50,
+            "thin_unet": false
         }
     },
     "data_loader": {
@@ -26,7 +26,7 @@
         "type": "Adam",
         "args": {
             "optim_args": {
-                "lr": 8.5e-5,
+                "lr": 1e-5,
                 "weight_decay": 0,
                 "amsgrad": true
             }
@@ -42,7 +42,7 @@
     },
     "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 100,
+        "epochs": 1000,
         "monitor": "min val_loss",
         "save_dir": "saved/",
         "save_period": 10,
@@ -50,7 +50,7 @@
         "verbosity": 2,
         "type": "PpcTrainer",
         "args": {
-            "num_particles": 2
+            "num_particles": 5
         }
     }
 }

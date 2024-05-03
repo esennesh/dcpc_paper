@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from denoising_diffusion_pytorch import Unet
+from diffusers import UNet2DModel
 import functools
 import math
 import networkx as nx
@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, MarkovKernel
+from utils import ScoreNetwork0
 
 class DigitPositions(MarkovKernel):
     def __init__(self, num_digits=3, z_where_dim=2):
@@ -182,17 +183,21 @@ class DiffusionPrior(MarkovKernel):
         return 3
 
     def forward(self) -> dist.Distribution:
-        return dist.Normal(self.loc, self.scale).to_event(3)
+        loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
+        scale = self.scale.expand(*self.batch_shape, *self.scale.shape)
+        return dist.Normal(loc, scale).to_event(3)
 
 class DiffusionStep(MarkovKernel):
-    def __init__(self, betas, dim_mults=(1, 2, 4, 8), flash_attn=True,
-                 hidden_dim=64):
+    def __init__(self, betas, x_side=128, thin_unet=True):
         super().__init__()
         self.batch_shape = ()
         self.register_buffer('betas', betas.to(dtype=torch.float))
 
-        self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
-                         flash_attn=flash_attn)
+        if thin_unet:
+            self.unet = ScoreNetwork0(x_side)
+        else:
+            self.unet = UNet2DModel(sample_size=(x_side, x_side),
+                                    add_attention=False)
 
     @property
     def event_dim(self):
@@ -200,9 +205,12 @@ class DiffusionStep(MarkovKernel):
 
     def forward(self, xs_prev: torch.Tensor, t=0) -> dist.Distribution:
         P, B, C, W, H = xs_prev.shape
-        loc = self.unet(xs_prev.view(P*B, C, W, H),
-                        torch.tensor(t, device=xs_prev.device,
-                                     dtype=torch.long).repeat(P*B))
+        if isinstance(self.unet, UNet2DModel):
+            loc = self.unet(xs_prev.view(P*B, C, W, H), 1, return_dict=False)[0]
+        else:
+            loc = self.unet(xs_prev.view(P*B, C, W, H),
+                            torch.tensor(t, device=xs_prev.device,
+                                         dtype=torch.long).repeat(P*B))
         return dist.Normal(loc.view(*xs_prev.shape),
                            self.betas[t]).to_event(3)
 
