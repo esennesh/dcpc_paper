@@ -239,7 +239,7 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         results = ()
         for site, kernel in self.sweep():
             density = kernel(*self.parent_vals(site))
-            self.update(site, pyro.sample(site, density))
+            self.update(site, pyro.sample(site, density).detach())
 
             if len(list(self.child_sites(site))) == 0:
                 results = results + (self.nodes[site]['value'],)
