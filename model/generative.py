@@ -188,11 +188,12 @@ class DiffusionPrior(MarkovKernel):
         return dist.Normal(loc, scale).to_event(3)
 
 class DiffusionStep(MarkovKernel):
-    def __init__(self, betas, x_side=128, thick=True, dim_mults=(1, 2, 4, 8),
-                 flash_attn=True, hidden_dim=64):
+    def __init__(self, betas, clip_lims=(-1, 1), x_side=128, thick=True,
+                 dim_mults=(1, 2, 4, 8), flash_attn=True, hidden_dim=64):
         super().__init__()
         self.batch_shape = ()
         self.register_buffer('betas', betas.to(dtype=torch.float))
+        self.clips = clip_lims
 
         if thick:
             self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
@@ -206,7 +207,7 @@ class DiffusionStep(MarkovKernel):
 
     def forward(self, xs_prev: torch.Tensor, t=0) -> dist.Distribution:
         P, B, C, W, H = xs_prev.shape
-        loc = self.unet(xs_prev.view(P*B, C, W, H),
+        loc = self.unet(torch.clamp(xs_prev.view(P*B, C, W, H), *self.clips),
                         torch.tensor(t, device=xs_prev.device,
                                      dtype=torch.long).repeat(P*B))
         return dist.Normal(loc.view(*xs_prev.shape),
