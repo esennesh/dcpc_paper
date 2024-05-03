@@ -7,7 +7,7 @@
         "args": {
             "flash_attn": false,
             "img_side": 64,
-            "T": 50,
+            "T": 400,
             "thick": false
         }
     },
@@ -46,12 +46,12 @@
         "epochs": 1000,
         "monitor": "min val_loss",
         "save_dir": "saved/",
-        "save_period": 10,
+        "save_period": 100,
         "tensorboard": true,
         "verbosity": 2,
         "type": "PpcTrainer",
         "args": {
-            "num_particles": 5
+            "num_particles": 1
         }
     }
 }
