@@ -229,11 +229,13 @@ class ConvolutionalDecoder(MarkovKernel):
             nn.ConvTranspose2d(hidden_dim, 64, 4, 1, 0), nn.SiLU(),
             nn.ConvTranspose2d(64, 64, 4, 2, 1), nn.SiLU(),
             nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.SiLU(),
-            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 64 else
+            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side in [64, 128] else
             (nn.ConvTranspose2d(32, 32, 3, 1, 0) if img_side == 28 else
              nn.ConvTranspose2d(32, 32, 3, 1, 1)),
             nn.SiLU(),
-            nn.ConvTranspose2d(32, channels, 4, 2, 1)
+            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 128 else nn.ConvTranspose2d(32, channels, 4, 2, 1),
+            nn.SiLU() if img_side == 128 else nn.Identity(),
+            nn.ConvTranspose2d(32, channels, 4, 2, 1) if img_side == 128 else nn.Identity(),
         )
         self.log_scale = nn.Parameter(torch.zeros(channels, img_side, img_side))
 
