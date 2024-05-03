@@ -5,9 +5,10 @@
     "arch": {
         "type": "DiffusionPpc",
         "args": {
+            "flash_attn": false,
             "img_side": 64,
             "T": 50,
-            "thin_unet": false
+            "thick": false
         }
     },
     "data_loader": {
