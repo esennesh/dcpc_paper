@@ -104,6 +104,7 @@ class CelebADataLoader(BaseDataLoader):
             transforms.Resize(img_side),
             transforms.CenterCrop(img_side),
             transforms.ToTensor(),
+            transforms.Lambda(lambda t: t.mT),
         ])
         self.data_dir = data_dir
         self.dataset = IndexedDataset(datasets.CelebA(self.data_dir, split="train" if training else "valid", download=True, transform=trsfm))
