@@ -48,22 +48,22 @@ class ScoreNetwork0(torch.nn.Module):
             ),
             torch.nn.Sequential(
                 # input is the output from the above sequential concated with the output from convs[3]
-                torch.nn.ConvTranspose2d(chs[3] * 2, chs[2], kernel_size=3, stride=2, padding=1, output_padding=1),  # (batch, 32, 7, 7)
+                torch.nn.ConvTranspose2d(chs[3], chs[2], kernel_size=3, stride=2, padding=1, output_padding=1),  # (batch, 32, 7, 7)
                 torch.nn.LogSigmoid(),
             ),
             torch.nn.Sequential(
                 # input is the output from the above sequential concated with the output from convs[2]
-                torch.nn.ConvTranspose2d(chs[2] * 2, chs[1], kernel_size=3, stride=2, padding=1, output_padding=1),  # (batch, chs[2], 14, 14)
+                torch.nn.ConvTranspose2d(chs[2], chs[1], kernel_size=3, stride=2, padding=1, output_padding=1),  # (batch, chs[2], 14, 14)
                 torch.nn.LogSigmoid(),
             ),
             torch.nn.Sequential(
                 # input is the output from the above sequential concated with the output from convs[1]
-                torch.nn.ConvTranspose2d(chs[1] * 2, chs[0], kernel_size=3, stride=2, padding=1, output_padding=1),  # (batch, chs[1], x_side, x_side)
+                torch.nn.ConvTranspose2d(chs[1], chs[0], kernel_size=3, stride=2, padding=1, output_padding=1),  # (batch, chs[1], x_side, x_side)
                 torch.nn.LogSigmoid(),
             ),
             torch.nn.Sequential(
                 # input is the output from the above sequential concated with the output from convs[0]
-                torch.nn.Conv2d(chs[0] * 2, chs[0], kernel_size=3, padding=1),  # (batch, chs[0], x_side, x_side)
+                torch.nn.Conv2d(chs[0], chs[0], kernel_size=3, padding=1),  # (batch, chs[0], x_side, x_side)
                 torch.nn.LogSigmoid(),
                 torch.nn.Conv2d(chs[0], nch, kernel_size=3, padding=1),  # (batch, 1, x_side, x_side)
             ),
@@ -85,8 +85,7 @@ class ScoreNetwork0(torch.nn.Module):
             if i == 0:
                 signal = tconv(signal)
             else:
-                signal = torch.cat((signal, signals[-i]), dim=-3)
-                signal = tconv(signal)
+                signal = tconv(signals[-i] + signal)
         signal = signal.reshape(*x2.shape)  # (..., 1 * 28 * 28)
         return signal
 
