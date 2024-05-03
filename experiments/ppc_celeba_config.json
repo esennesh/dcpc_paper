@@ -40,7 +40,7 @@
     },
     "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 1000,
+        "epochs": 250,
         "monitor": "min val_loss",
         "save_dir": "saved/",
         "save_period": 10,
@@ -48,7 +48,7 @@
         "verbosity": 2,
         "type": "PpcTrainer",
         "args": {
-            "num_particles": 4
+            "num_particles": 2
         }
     }
 }
