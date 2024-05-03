@@ -255,7 +255,4 @@ _msngrs = [
     AsviMessenger,
 ]
 
-for _msngr_cls in _msngrs:
-    _handler_name, _handler = _make_handler(_msngr_cls)
-    _handler.__module__ = __name__
-    locals()[_handler_name] = _handler
+locals()["asvi"] = _make_handler(AsviMessenger, __name__)
