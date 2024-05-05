@@ -1,0 +1,54 @@
+{
+    "name": "CelebA_Ppc",
+    "n_gpu": 1,
+
+    "arch": {
+        "type": "CelebAPpc",
+        "args": {
+          "img_side": 128
+        }
+    },
+    "data_loader": {
+        "type": "CelebADataLoader",
+        "args":{
+            "data_dir": "data/",
+            "drop_last": false,
+            "shuffle": true,
+            "batch_size": 2048,
+            "validation_split": 0.1,
+            "num_workers": 2,
+            "img_side": 128
+        }
+    },
+    "optimizer": {
+        "type": "Adam",
+        "args": {
+            "optim_args": {
+                "lr": 8e-4,
+                "weight_decay": 0,
+                "amsgrad": true
+            }
+        }
+    },
+    "lr_scheduler": {
+        "type": "ReduceLROnPlateau",
+        "args": {
+          "patience": 50,
+          "cooldown": 10,
+          "factor": 0.9
+        }
+    },
+    "metrics": ["ess", "log_marginal"],
+    "trainer": {
+        "epochs": 250,
+        "monitor": "min val_loss",
+        "save_dir": "saved/",
+        "save_period": 10,
+        "tensorboard": true,
+        "verbosity": 2,
+        "type": "PpcTrainer",
+        "args": {
+            "num_particles": 2
+        }
+    }
+}
