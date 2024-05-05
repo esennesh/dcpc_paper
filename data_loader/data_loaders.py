@@ -95,6 +95,21 @@ class MiniBouncingMnistDataLoader(BaseDataLoader):
         self.dataset = IndexedDataset(MiniBouncingMnist(self.data_dir, transform=trsfm))
         super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
 
+class CelebADataLoader(BaseDataLoader):
+    """
+    CelebA data loading using BaseDataLoader
+    """
+    def __init__(self, data_dir, batch_size, img_side=64, shuffle=False, validation_split=0.0, num_workers=1, training=True, drop_last=False):
+        trsfm = transforms.Compose([
+            transforms.Resize(img_side),
+            transforms.CenterCrop(img_side),
+            transforms.ToTensor(),
+            transforms.Lambda(lambda t: t.mT),
+        ])
+        self.data_dir = data_dir
+        self.dataset = IndexedDataset(datasets.CelebA(self.data_dir, split="train" if training else "valid", download=True, transform=trsfm))
+        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
+
 class Flowers102DataLoader(BaseDataLoader):
     """
     Oxford 102 Flower data loading use BaseDataLoader

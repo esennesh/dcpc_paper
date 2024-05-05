@@ -114,12 +114,16 @@ class DigitDecoder(MarkovKernel):
         return dist.ContinuousBernoulli(estimate).to_event(3)
 
 class GaussianPrior(MarkovKernel):
-    def __init__(self, out_dim):
+    def __init__(self, out_dim, train_params=True):
         super().__init__()
         self.batch_shape = ()
 
-        self.loc = nn.Parameter(torch.zeros(out_dim))
-        self.covariance = nn.Parameter(torch.eye(out_dim))
+        if train_params:
+            self.loc = nn.Parameter(torch.zeros(out_dim))
+            self.covariance = nn.Parameter(torch.eye(out_dim))
+        else:
+            self.register_buffer("loc", torch.zeros(out_dim))
+            self.register_buffer("covariance", torch.eye(out_dim))
 
     @property
     def event_dim(self):
@@ -212,6 +216,41 @@ class DiffusionStep(MarkovKernel):
                                      dtype=torch.long).repeat(P*B))
         return dist.Normal(F.tanh(loc.view(*xs_prev.shape)),
                            self.betas[t]).to_event(3)
+
+class ConvolutionalDecoder(MarkovKernel):
+    def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
+        super().__init__()
+        self.batch_shape = ()
+        self._channels = channels
+        self._img_side = img_side
+
+        self.linear = nn.Sequential(nn.Linear(z_dim, hidden_dim), nn.SiLU())
+        self.convs = nn.Sequential(
+            nn.ConvTranspose2d(hidden_dim, 64, 4, 1, 0), nn.SiLU(),
+            nn.ConvTranspose2d(64, 64, 4, 2, 1), nn.SiLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.SiLU(),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side in [64, 128] else
+            (nn.ConvTranspose2d(32, 32, 3, 1, 0) if img_side == 28 else
+             nn.ConvTranspose2d(32, 32, 3, 1, 1)),
+            nn.SiLU(),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 128 else nn.ConvTranspose2d(32, channels, 4, 2, 1),
+            nn.SiLU() if img_side == 128 else nn.Identity(),
+            nn.ConvTranspose2d(32, channels, 4, 2, 1) if img_side == 128 else nn.Identity(),
+        )
+        self.log_scale = nn.Parameter(torch.zeros(channels, img_side, img_side))
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self, zs: torch.Tensor) -> dist.Distribution:
+        P, B, _ = zs.shape
+        hs = self.linear(zs)
+        hs = hs.view(P*B, *hs.shape[2:], 1, 1)
+        loc = self.convs(hs).view(P, B, self._channels, self._img_side,
+                                  self._img_side)
+        scale = self.log_scale.exp().expand(P, B, *self.log_scale.shape)
+        return dist.Normal(F.sigmoid(loc), scale).to_event(3)
 
 class GraphicalModel(BaseModel, pnn.PyroModule):
     def __init__(self):
