@@ -44,10 +44,7 @@ class BouncingMnistAsvi(BaseModel):
         self.digit_features = DigitFeatures(z_what_dim)
         self.digit_positions = DigitPositions(z_where_dim)
 
-    def forward(self, xs):
-        return self.model(xs)
-
-    def model(self, xs):
+    def generate(self, xs):
         B, T, _, _ = xs.shape
         pz_what = self.digit_features(K=self._num_digits, batch_shape=(B,))
         z_what = pyro.sample("z_what", pz_what)
@@ -92,7 +89,7 @@ class MnistPpc(BaseModel):
         self.graph.add_node("z3", ["z2"], self.decoder2)
         self.graph.add_node("X", ["z3"], self.likelihood)
 
-    def forward(self, xs=None, **kwargs):
+    def generate(self, xs=None, **kwargs):
         if xs is not None:
             B = xs.shape[0]
             self.graph.clamp("X", xs)
@@ -139,7 +136,7 @@ class BouncingMnistPpc(BaseModel):
             self.graph.add_node("X__%d" % t, ["z_what", "z_where__%d" % t],
                                 self.decoder)
 
-    def forward(self, xs=None, **kwargs):
+    def generate(self, xs=None, **kwargs):
         B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
         self.digit_features.batch_shape = (B,)
         self.digit_positions.batch_shape = (B,)
@@ -178,7 +175,7 @@ class DiffusionPpc(BaseModel):
             step_kernel = PartialMarkovKernel(self.diffusion, t=t)
             self.graph.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
 
-    def forward(self, xs=None, **kwargs):
+    def generate(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
         self.diffusion.batch_shape = (B,)
         self.prior.batch_shape = (B,)
