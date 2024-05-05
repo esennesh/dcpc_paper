@@ -81,6 +81,18 @@ class EMnistDataLoader(BaseDataLoader):
         self.dataset = IndexedDataset(datasets.EMNIST(self.data_dir, split="balanced", train=training, download=True, transform=trsfm))
         super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
 
+class FashionMnistDataLoader(BaseDataLoader):
+    """
+    FashionMNIST data loading using BaseDataLoader
+    """
+    def __init__(self, data_dir, batch_size, shuffle=False, validation_split=0.0, num_workers=1, training=True, drop_last=False):
+        trsfm = transforms.Compose([
+            transforms.ToTensor(),
+        ])
+        self.data_dir = data_dir
+        self.dataset = IndexedDataset(datasets.FashionMNIST(self.data_dir, train=training, download=True, transform=trsfm))
+        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
+
 class BouncingMnistDataLoader(BaseDataLoader):
     """
     Bouncing MNIST data loading using BaseDataLoader
