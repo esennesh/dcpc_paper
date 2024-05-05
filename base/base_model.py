@@ -2,19 +2,26 @@ import pyro
 import torch
 import numpy as np
 from abc import abstractmethod
-
+import utils
 
 class BaseModel(pyro.nn.PyroModule):
     """
     Base class for all models
     """
-    @abstractmethod
-    def forward(self, *inputs):
+    def forward(self, *args, **kwargs):
         """
         Forward pass logic
 
         :return: Model output
         """
+        return utils.importance(self.generate, self.guide, *args, **kwargs)
+
+    @abstractmethod
+    def generate(self, *args, **kwargs):
+        raise NotImplementedError
+
+    @abstractmethod
+    def guide(self, *args, **kwargs):
         raise NotImplementedError
 
     def __str__(self):
