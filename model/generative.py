@@ -9,7 +9,8 @@ import pyro.nn as pnn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from base import BaseModel, MarkovKernel
+from base import BaseModel, ImportanceModel, MarkovKernel
+from base import MarkovKernelApplication
 from utils import ScoreNetwork0
 
 class DigitPositions(MarkovKernel):
@@ -252,7 +253,7 @@ class ConvolutionalDecoder(MarkovKernel):
         scale = self.log_scale.exp().expand(P, B, *self.log_scale.shape)
         return dist.Normal(F.sigmoid(loc), scale).to_event(3)
 
-class GraphicalModel(BaseModel, pnn.PyroModule):
+class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def __init__(self):
         super().__init__()
         self._graph = nx.DiGraph()
@@ -274,18 +275,32 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         for site in self.nodes:
             self.unclamp(site)
 
-    def forward(self):
+    def forward(self, *args, **kwargs):
+        clamps = {k: v for k, v in kwargs.items() if k in self.nodes}
+        for k, v in clamps.items():
+            self.clamp(k, v)
+            kwargs.pop(k)
+        return super().forward(*args, **kwargs)
+
+    def generate(self, **kwargs):
         results = ()
+
         for site, kernel in self.sweep():
             density = kernel(*self.parent_vals(site))
-            self.update(site, pyro.sample(site, density).detach())
+            if self.nodes[site]['is_observed']:
+                obs = self.nodes[site]['value']
+            else:
+                obs = None
+            self.update(site, pyro.sample(site, density, obs=obs).detach())
 
             if len(list(self.child_sites(site))) == 0:
                 results = results + (self.nodes[site]['value'],)
         return results[0] if len(results) == 1 else results
 
     def kernel(self, site):
-        return self.nodes[site]['kernel']
+        apply = self.nodes[site]['kernel']
+        return functools.partial(getattr(self, apply.kernel), *apply.args,
+                                 **apply.kwargs)
 
     def log_prob(self, site, value, *args, **kwargs):
         density = self.kernel(site)(*args, **kwargs)
@@ -337,4 +352,4 @@ def clamp_graph(graph, **kwargs):
             yield graph
     finally:
         for k in kwargs:
-            graph.update(k, None)
+            graph.unclamp(k)
