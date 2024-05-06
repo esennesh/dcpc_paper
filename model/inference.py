@@ -133,7 +133,8 @@ class PpcGraphicalModel(GraphicalModel):
         results = ()
         for site, kernel in self.sweep(forward=False):
             if not self.nodes[site]["is_observed"]:
-                posterior = self.get_posterior(site, kernel.event_dim, lr=lr)
+                posterior = self.get_posterior(site, kernel.func.event_dim,
+                                               lr=lr)
                 self.update(site, pyro.sample(site, posterior))
 
             if len(list(self.child_sites(site))) == 0:
