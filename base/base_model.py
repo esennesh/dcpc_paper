@@ -14,14 +14,6 @@ class BaseModel(pyro.nn.PyroModule):
 
         :return: Model output
         """
-        return utils.importance(self.generate, self.guide, *args, **kwargs)
-
-    @abstractmethod
-    def generate(self, *args, **kwargs):
-        raise NotImplementedError
-
-    @abstractmethod
-    def guide(self, *args, **kwargs):
         raise NotImplementedError
 
     def __str__(self):
@@ -41,6 +33,21 @@ class BaseModel(pyro.nn.PyroModule):
         resume_path = str(resume_path)
         checkpoint = torch.load(resume_path)
         self.load_state_dict(checkpoint['state_dict'])
+
+class ImportanceModel(BaseModel):
+    def forward(self, *args, B=1, prior=False, P=1, **kwargs):
+        with pyro.plate_stack("importance", (P, B)):
+            if prior:
+                return self.generate(*args, **kwargs)
+            return utils.importance(self.generate, self.guide, *args, **kwargs)
+
+    @abstractmethod
+    def generate(self, *args, **kwargs):
+        raise NotImplementedError
+
+    @abstractmethod
+    def guide(self, *args, **kwargs):
+        raise NotImplementedError
 
 class MarkovKernel(pyro.nn.PyroModule):
     """
