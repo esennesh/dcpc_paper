@@ -129,7 +129,7 @@ class BouncingMnistPpc(PpcGraphicalModel):
         recons = super().forward(**clamps, **kwargs)
         return torch.stack(recons, dim=2)
 
-class DiffusionPpc(BaseModel):
+class DiffusionPpc(PpcGraphicalModel):
     def __init__(self, channels=3, dim_mults=(1, 2, 4, 8), thick=True,
                  flash_attn=True, hidden_dim=64, img_side=128, T=100):
         super().__init__()
@@ -144,25 +144,16 @@ class DiffusionPpc(BaseModel):
                                        thick=thick, x_side=img_side)
         self.prior = DiffusionPrior(channels, img_side)
 
-        self.graph = PpcGraphicalModel()
-        self.graph.add_node("X__%d" % T, [], self.prior)
+        self.add_node("X__%d" % T, [], self.prior)
         for t in reversed(range(T)):
-            step_kernel = PartialMarkovKernel(self.diffusion, t=t)
-            self.graph.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
+            step_kernel = MarkovKernelApplication(self.diffusion, (), {"t": t})
+            self.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
 
-    def generate(self, xs=None, **kwargs):
+    def forward(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
         self.diffusion.batch_shape = (B,)
         self.prior.batch_shape = (B,)
-        with clamp_graph(self.graph, X__0=xs) as graph:
-            return graph.forward()
-
-    def guide(self, xs=None, lr=1e-4):
-        B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
-        self.diffusion.batch_shape = (B,)
-        self.prior.batch_shape = (B,)
-        with clamp_graph(self.graph, X__0=xs) as graph:
-            return graph.guide(lr=lr)
+        return super().forward(X__0=xs, **kwargs)
 
 class CelebAPpc(BaseModel):
     def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
