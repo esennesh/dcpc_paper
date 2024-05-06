@@ -155,7 +155,7 @@ class DiffusionPpc(PpcGraphicalModel):
         self.prior.batch_shape = (B,)
         return super().forward(X__0=xs, **kwargs)
 
-class CelebAPpc(BaseModel):
+class CelebAPpc(PpcGraphicalModel):
     def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
         super().__init__()
         self._channels = channels
@@ -164,20 +164,11 @@ class CelebAPpc(BaseModel):
         self.likelihood = ConvolutionalDecoder(channels, z_dim, hidden_dim,
                                                img_side)
 
-        self.graph = PpcGraphicalModel()
-        self.graph.add_node("z", [], self.prior)
-        self.graph.add_node("X", ["z"], self.likelihood)
+        self.add_node("z", [], self.prior)
+        self.add_node("X", ["z"], self.likelihood)
 
     def forward(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
         self.prior.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
-        with clamp_graph(self.graph, X=xs) as graph:
-            return graph.forward()
-
-    def guide(self, xs=None, lr=1e-4):
-        B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
-        self.prior.batch_shape = (B,)
-        self.likelihood.batch_shape = (B,)
-        with clamp_graph(self.graph, X=xs) as graph:
-            return graph.guide(lr=lr)
+        return super().forward(X=xs, **kwargs)
