@@ -67,18 +67,19 @@ class LightningPpc(L.LightningModule):
     """
     Lightning module for Population Predictive Coding (PPC)
     """
-    def __init__(self, model: PpcGraphicalModel, data: L.LightningDataModule,
+    def __init__(self, graph: PpcGraphicalModel, data: L.LightningDataModule,
                  cooldown=50, factor=0.9, lr=1e-3, num_particles=4,
                  num_sweeps=1, patience=100):
         super().__init__()
+        self.save_hyperparameters(ignore=["data", "graph"])
         self.cooldown = cooldown
         self.factor = factor
         self.lr = lr
-        self.model = model
+        self.graph = graph
         self.num_particles = num_particles
         self.num_sweeps = num_sweeps
         self.patience = patience
-        self.predictive = Predictive(self.model.model, guide=self.model.guide,
+        self.predictive = Predictive(self.graph.model, guide=self.graph.guide,
                                      num_samples=self.num_particles)
 
         num_train = len(data.train_dataloader().dataset)
@@ -92,31 +93,28 @@ class LightningPpc(L.LightningModule):
 
     def _initialize_particles(self, batch, batch_idx, train=True):
         data, target, indices = batch
-        self.model(data, lr=self.lr, P=self.num_particles, prior=True)
+        self.graph(data, lr=self.lr, P=self.num_particles, prior=True)
         self._save_particles(indices, train)
 
     def _load_particles(self, indices, train=True):
         particles = self.particles["train" if train else "valid"]
         for site in particles:
-            self.model.update(site, particles.get_particles(site, indices))
+            self.graph.update(site, particles.get_particles(site, indices))
 
     def _save_particles(self, indices, train=True):
         particles = self.particles["train" if train else "valid"]
-        for site in self.model.stochastic_nodes:
+        for site in self.graph.stochastic_nodes:
             particles.set_particles(site, indices,
-                                    self.model.nodes[site]['value'].detach())
+                                    self.graph.nodes[site]['value'].detach())
 
     def configure_optimizers(self):
-        parameters = list(self.model.parameters()) +\
-                     list(self.particles["train"].parameters()) +\
-                     list(self.particles["valid"].parameters())
-        optimizer = torch.optim.Adam(parameters, amsgrad=True,
+        optimizer = torch.optim.Adam(self.graph.parameters(), amsgrad=True,
                                      lr=self.lr, weight_decay=0.)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, cooldown=self.cooldown, factor=self.factor,
             patience=self.patience
         )
-        return {"lr_scheduler": lr_scheduler, "monitor": "val_loss",
+        return {"lr_scheduler": lr_scheduler, "monitor": "valid/loss",
                 "optimizer": optimizer}
 
     def on_load_checkpoint(self, checkpoint):
@@ -125,37 +123,37 @@ class LightningPpc(L.LightningModule):
     def on_save_checkpoint(self, checkpoint):
         checkpoint["particle_dicts"] = self.particles
 
-    def ppc_step(self, batch, batch_idx):
-        data, target, indices = batch
+    def ppc_step(self, data):
         for _ in range(self.num_sweeps - 1):
-            self.model(data, lr=self.lr, P=self.num_particles)
-        trace, log_weight = self.model(data, lr=self.lr, P=self.num_particles)
-        return log_weight, ptrace
+            self.graph(data, lr=self.lr, P=self.num_particles)
+        return self.graph(data, lr=self.lr, P=self.num_particles)
 
     def training_step(self, batch, batch_idx):
-        self._load_particles(batch_idx, train=True)
-        log_weight, trace = self.ppc_step(batch, batch_idx)
+        data, _, indices = batch
+        self._load_particles(indices, train=True)
+        trace, log_weight = self.ppc_step(data)
         loss = -log_weight.mean()
-        self._save_particles(batch_idx, train=True)
+        self._save_particles(indices, train=True)
 
-        self.log("train_ess", metric.ess(trace, log_weight.detach()))
-        self.log("train_log_joint", metric.log_joint(trace,
+        self.log("train/ess", metric.ess(trace, log_weight.detach()))
+        self.log("train/log_joint", metric.log_joint(trace,
                                                      log_weight.detach()))
-        self.log("train_log_marginal", metric.log_marginal(trace,
+        self.log("train/log_marginal", metric.log_marginal(trace,
                                                            log_weight.detach()))
-        self.log("train_loss", loss)
+        self.log("train/loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        self._load_particles(batch_idx, train=False)
-        log_weight, trace = self.ppc_step(batch, batch_idx)
+        data, _, indices = batch
+        self._load_particles(indices, train=False)
+        trace, log_weight = self.ppc_step(data)
         loss = -log_weight.mean()
-        self._save_particles(batch_idx, train=False)
+        self._save_particles(indices, train=False)
 
-        self.log("train_ess", metric.ess(trace, log_weight.detach()))
-        self.log("train_log_joint", metric.log_joint(trace,
+        self.log("valid/ess", metric.ess(trace, log_weight.detach()))
+        self.log("valid/log_joint", metric.log_joint(trace,
                                                      log_weight.detach()))
-        self.log("train_log_marginal", metric.log_marginal(trace,
+        self.log("valid/log_marginal", metric.log_marginal(trace,
                                                            log_weight.detach()))
-        self.log("train_loss", loss)
+        self.log("valid/loss", loss)
         return loss
