@@ -7,11 +7,11 @@ import pyro.nn as pnn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from base import BaseModel, PartialMarkovKernel
+from base import BaseModel, MarkovKernelApplication
 from .generative import *
 from .inference import PpcGraphicalModel, asvi, mlp_amortizer
 
-class BouncingMnistAsvi(BaseModel):
+class BouncingMnistAsvi(ImportanceModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
                  x_side=96, z_what_dim=10, z_where_dim=2):
         super().__init__()
@@ -44,10 +44,7 @@ class BouncingMnistAsvi(BaseModel):
         self.digit_features = DigitFeatures(z_what_dim)
         self.digit_positions = DigitPositions(z_where_dim)
 
-    def forward(self, xs):
-        return self.model(xs)
-
-    def model(self, xs):
+    def generate(self, xs):
         B, T, _, _ = xs.shape
         pz_what = self.digit_features(K=self._num_digits, batch_shape=(B,))
         z_what = pyro.sample("z_what", pz_what)
@@ -77,7 +74,7 @@ class BouncingMnistAsvi(BaseModel):
                                                 batch_shape=(B,))
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
-class MnistPpc(BaseModel):
+class MnistPpc(PpcGraphicalModel):
     def __init__(self, digit_side=28, z_dims=[20, 128, 256]):
         super().__init__()
         self.prior = GaussianPrior(z_dims[0])
@@ -86,37 +83,22 @@ class MnistPpc(BaseModel):
         self.likelihood = MlpBernoulliLikelihood(z_dims[2],
                                                  (digit_side, digit_side))
 
-        self.graph = PpcGraphicalModel()
-        self.graph.add_node("z1", [], self.prior)
-        self.graph.add_node("z2", ["z1"], self.decoder1)
-        self.graph.add_node("z3", ["z2"], self.decoder2)
-        self.graph.add_node("X", ["z3"], self.likelihood)
+        self.add_node("z1", [], MarkovKernelApplication("prior", (), {}))
+        self.add_node("z2", ["z1"], MarkovKernelApplication("decoder1", (),
+                                                            {}))
+        self.add_node("z3", ["z2"], MarkovKernelApplication("decoder2", (),
+                                                            {}))
+        self.add_node("X", ["z3"], MarkovKernelApplication("likelihood", (),
+                                                           {}))
 
     def forward(self, xs=None, **kwargs):
-        if xs is not None:
-            B = xs.shape[0]
-            self.graph.clamp("X", xs)
-        else:
-            B = 1
+        B = xs.shape[0] if xs is not None else 1
         self.prior.batch_shape = (B,)
         self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
-        with clamp_graph(self.graph, X=xs) as graph:
-            return graph.forward()
+        return super().forward(X=xs, B=B, **kwargs)
 
-    def guide(self, xs=None, lr=1e-3):
-        if xs is not None:
-            B = xs.shape[0]
-            self.graph.clamp("X", xs)
-        else:
-            B = 1
-        self.prior.batch_shape = (B,)
-        self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
-        self.likelihood.batch_shape = (B,)
-        with clamp_graph(self.graph, X=xs) as graph:
-            return graph.guide(lr=lr)
-
-class BouncingMnistPpc(BaseModel):
+class BouncingMnistPpc(PpcGraphicalModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
                  x_side=96, z_what_dim=10, z_where_dim=2):
         super().__init__()
@@ -127,37 +109,27 @@ class BouncingMnistPpc(BaseModel):
         self.digit_features = DigitFeatures(num_digits, z_what_dim)
         self.digit_positions = DigitPositions(num_digits, z_where_dim)
 
-        self.graph = PpcGraphicalModel()
-        self.graph.add_node("z_what", [], self.digit_features)
+        self.add_node("z_what", [], self.digit_features)
         for t in range(T):
             if t == 0:
-                where_kernel = PartialMarkovKernel(self.digit_positions, None)
-                self.graph.add_node("z_where__0", [], where_kernel)
+                where_kernel = MarkovKernelApplication("digit_positions",
+                                                       (None,), {})
+                self.add_node("z_where__0", [], where_kernel)
             else:
-                self.graph.add_node("z_where__%d" % t, ["z_where__%d" % (t-1)],
+                self.add_node("z_where__%d" % t, ["z_where__%d" % (t-1)],
                                     self.digit_positions)
-            self.graph.add_node("X__%d" % t, ["z_what", "z_where__%d" % t],
-                                self.decoder)
+            self.add_node("X__%d" % t, ["z_what", "z_where__%d" % t],
+                          self.decoder)
 
     def forward(self, xs=None, **kwargs):
         B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
         self.digit_features.batch_shape = (B,)
         self.digit_positions.batch_shape = (B,)
         clamps = {"X__%d" % t: xs[:, t] for t in range(T) if xs is not None}
-        with clamp_graph(self.graph, **clamps) as graph:
-            recons = graph.forward()
+        recons = super().forward(**clamps, **kwargs)
         return torch.stack(recons, dim=2)
 
-    def guide(self, xs=None, lr=1e-3):
-        B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
-        self.digit_features.batch_shape = (B,)
-        self.digit_positions.batch_shape = (B,)
-        clamps = {"X__%d" % t: xs[:, t] for t in range(T) if xs is not None}
-        with clamp_graph(self.graph, **clamps) as graph:
-            recons = graph.guide(lr=lr)
-        return torch.stack(recons, dim=2)
-
-class DiffusionPpc(BaseModel):
+class DiffusionPpc(PpcGraphicalModel):
     def __init__(self, channels=3, dim_mults=(1, 2, 4, 8), thick=True,
                  flash_attn=True, hidden_dim=64, img_side=128, T=100):
         super().__init__()
@@ -172,27 +144,18 @@ class DiffusionPpc(BaseModel):
                                        thick=thick, x_side=img_side)
         self.prior = DiffusionPrior(channels, img_side)
 
-        self.graph = PpcGraphicalModel()
-        self.graph.add_node("X__%d" % T, [], self.prior)
+        self.add_node("X__%d" % T, [], self.prior)
         for t in reversed(range(T)):
-            step_kernel = PartialMarkovKernel(self.diffusion, t=t)
-            self.graph.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
+            step_kernel = MarkovKernelApplication(self.diffusion, (), {"t": t})
+            self.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
 
     def forward(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
         self.diffusion.batch_shape = (B,)
         self.prior.batch_shape = (B,)
-        with clamp_graph(self.graph, X__0=xs) as graph:
-            return graph.forward()
+        return super().forward(X__0=xs, **kwargs)
 
-    def guide(self, xs=None, lr=1e-4):
-        B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
-        self.diffusion.batch_shape = (B,)
-        self.prior.batch_shape = (B,)
-        with clamp_graph(self.graph, X__0=xs) as graph:
-            return graph.guide(lr=lr)
-
-class CelebAPpc(BaseModel):
+class CelebAPpc(PpcGraphicalModel):
     def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
         super().__init__()
         self._channels = channels
@@ -201,20 +164,11 @@ class CelebAPpc(BaseModel):
         self.likelihood = ConvolutionalDecoder(channels, z_dim, hidden_dim,
                                                img_side)
 
-        self.graph = PpcGraphicalModel()
-        self.graph.add_node("z", [], self.prior)
-        self.graph.add_node("X", ["z"], self.likelihood)
+        self.add_node("z", [], self.prior)
+        self.add_node("X", ["z"], self.likelihood)
 
     def forward(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
         self.prior.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
-        with clamp_graph(self.graph, X=xs) as graph:
-            return graph.forward()
-
-    def guide(self, xs=None, lr=1e-4):
-        B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
-        self.prior.batch_shape = (B,)
-        self.likelihood.batch_shape = (B,)
-        with clamp_graph(self.graph, X=xs) as graph:
-            return graph.guide(lr=lr)
+        return super().forward(X=xs, **kwargs)

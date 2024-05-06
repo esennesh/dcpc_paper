@@ -1,15 +1,15 @@
+from abc import abstractmethod
+from dataclasses import dataclass
+import numpy as np
 import pyro
 import torch
-import numpy as np
-from abc import abstractmethod
-
+import utils
 
 class BaseModel(pyro.nn.PyroModule):
     """
     Base class for all models
     """
-    @abstractmethod
-    def forward(self, *inputs):
+    def forward(self, *args, **kwargs):
         """
         Forward pass logic
 
@@ -34,6 +34,21 @@ class BaseModel(pyro.nn.PyroModule):
         resume_path = str(resume_path)
         checkpoint = torch.load(resume_path)
         self.load_state_dict(checkpoint['state_dict'])
+
+class ImportanceModel(BaseModel):
+    def forward(self, *args, B=1, prior=False, P=1, **kwargs):
+        with pyro.plate_stack("importance", (P, B)):
+            if prior:
+                return self.generate(*args, **kwargs)
+            return utils.importance(self.generate, self.guide, *args, **kwargs)
+
+    @abstractmethod
+    def generate(self, *args, **kwargs):
+        raise NotImplementedError
+
+    @abstractmethod
+    def guide(self, *args, **kwargs):
+        raise NotImplementedError
 
 class MarkovKernel(pyro.nn.PyroModule):
     """
@@ -70,25 +85,8 @@ class MarkovKernel(pyro.nn.PyroModule):
         checkpoint = torch.load(resume_path)
         self.load_state_dict(checkpoint['state_dict'])
 
-class PartialMarkovKernel:
-    def __init__(self, kernel: MarkovKernel, *args, **kwargs):
-        self._args = args
-        self._kernel = kernel
-        self._kwargs = kwargs
-        self.batch_shape = ()
-
-    @property
-    def event_dim(self):
-        return self.kernel.event_dim
-
-    def __call__(self, *args, **kwargs) -> pyro.distributions.Distribution:
-        self.kernel.batch_shape = self.batch_shape
-        kwargs = {**self._kwargs, **kwargs}
-        return self.kernel(*self._args, *args, **kwargs)
-
-    @property
-    def kernel(self):
-        return self._kernel
-
-    def __str__(self):
-        return str(self.kernel)
+@dataclass
+class MarkovKernelApplication:
+    kernel: str
+    args: tuple
+    kwargs: dict

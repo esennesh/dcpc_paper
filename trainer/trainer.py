@@ -171,42 +171,43 @@ class PpcTrainer(BaseTrainer):
             data = data.to(self.device)
             self._initialize_particles(batch_indices, data)
             self.logger.debug("Initialize particles: train batch {}".format(batch_idx))
-        self.model.graph.clear()
+        self.model.clear()
 
         for batch_idx, (data, target, batch_indices) in enumerate(self.valid_data_loader):
             data = data.to(self.device)
             self._initialize_particles(batch_indices, data, False)
             self.logger.debug("Initialize particles: valid batch {}".format(batch_idx))
-        self.model.graph.clear()
+        self.model.clear()
 
         if resume is not None:
             self._resume_checkpoint(resume)
+
+    @property
+    def module(self):
+        if isinstance(self.model, torch.nn.DataParallel):
+            return self.model.module
+        return self.model
 
     def train(self, profiler=None):
         self.train_particles = self.train_particles.to(self.device)
         self.valid_particles = self.valid_particles.to(self.device)
         super().train(profiler=profiler)
 
-    def _clear_particles(self):
-        for site in self.model.graph.nodes:
-            self.model.graph.unclamp(site)
-
     def _initialize_particles(self, batch_indices, data, train=True):
         data_loader = self.data_loader if train else self.valid_data_loader
-        with pyro.plate_stack("initialize", (self.num_particles, len(data))):
-            self.model.forward(data)
+        self.model(data, prior=True, P=self.num_particles)
         self._save_particles(batch_indices, train)
 
     def _load_particles(self, batch_indices, train=True):
         particles = self.train_particles if train else self.valid_particles
         for site in particles:
             value = particles.get_particles(site, batch_indices)
-            self.model.graph.update(site, value.to(self.device))
+            self.module.update(site, value.to(self.device))
 
     def _save_particles(self, batch_indices, train=True):
         particles = self.train_particles if train else self.valid_particles
-        for site in self.model.graph.stochastic_nodes:
-            value = self.model.graph.nodes[site]['value'].detach()
+        for site in self.module.stochastic_nodes:
+            value = self.module.nodes[site]['value'].detach()
             particles.set_particles(site, batch_indices, value)
 
     def _ppc_step(self, batch_indices, data, train=True):
@@ -214,14 +215,10 @@ class PpcTrainer(BaseTrainer):
         self._load_particles(batch_indices, train)
 
         # Wasserstein-gradient updates to latent variables
-        with pyro.plate_stack("_ppc_step", (self.num_particles, len(data))):
-            for _ in range(self.num_sweeps - 1):
-                utils.importance(self.model.forward, self.model.guide, data,
-                                 lr=self.lr)
-            trace, log_weight = utils.importance(self.model.forward,
-                                                 self.model.guide, data,
-                                                 lr=self.lr)
-            trace.detach_()
+        for _ in range(self.num_sweeps - 1):
+            self.model(data, lr=self.lr, P=self.num_particles)
+        trace, log_weight = self.model(data, lr=self.lr, P=self.num_particles)
+        trace.detach_()
 
         loss = -log_weight.mean()
         if train:
