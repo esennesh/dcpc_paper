@@ -1,0 +1,51 @@
+{
+    "name": "FashionMnist_Ppc",
+    "n_gpu": 1,
+
+    "arch": {
+        "type": "MnistPpc",
+        "args": {}
+    },
+    "data_loader": {
+        "type": "FashionMnistDataLoader",
+        "args":{
+            "data_dir": "data/",
+            "drop_last": false,
+            "shuffle": true,
+            "batch_size": 512,
+            "validation_split": 0.1,
+            "num_workers": 2
+        }
+    },
+    "optimizer": {
+        "type": "Adam",
+        "args": {
+            "optim_args": {
+                "lr": 0.01,
+                "weight_decay": 0,
+                "amsgrad": true
+            }
+        }
+    },
+    "lr_scheduler": {
+        "type": "ReduceLROnPlateau",
+        "args": {
+          "patience": 100,
+          "cooldown": 50,
+          "factor": 0.9
+        }
+    },
+    "metrics": ["ess", "log_marginal", "log_joint"],
+    "trainer": {
+        "epochs": 2000,
+        "monitor": "min val_loss",
+        "save_dir": "saved/",
+        "save_period": 10,
+        "tensorboard": true,
+        "verbosity": 2,
+        "type": "PpcTrainer",
+        "args": {
+            "num_particles": 2
+        }
+    }
+}
