@@ -11,7 +11,7 @@ from base import BaseModel, PartialMarkovKernel
 from .generative import *
 from .inference import PpcGraphicalModel, asvi, mlp_amortizer
 
-class BouncingMnistAsvi(BaseModel):
+class BouncingMnistAsvi(ImportanceModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
                  x_side=96, z_what_dim=10, z_where_dim=2):
         super().__init__()
