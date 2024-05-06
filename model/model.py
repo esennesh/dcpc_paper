@@ -74,7 +74,7 @@ class BouncingMnistAsvi(ImportanceModel):
                                                 batch_shape=(B,))
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
-class MnistPpc(BaseModel):
+class MnistPpc(PpcGraphicalModel):
     def __init__(self, digit_side=28, z_dims=[20, 128, 256]):
         super().__init__()
         self.prior = GaussianPrior(z_dims[0])
@@ -83,35 +83,20 @@ class MnistPpc(BaseModel):
         self.likelihood = MlpBernoulliLikelihood(z_dims[2],
                                                  (digit_side, digit_side))
 
-        self.graph = PpcGraphicalModel()
-        self.graph.add_node("z1", [], self.prior)
-        self.graph.add_node("z2", ["z1"], self.decoder1)
-        self.graph.add_node("z3", ["z2"], self.decoder2)
-        self.graph.add_node("X", ["z3"], self.likelihood)
+        self.add_node("z1", [], MarkovKernelApplication("prior", (), {}))
+        self.add_node("z2", ["z1"], MarkovKernelApplication("decoder1", (),
+                                                            {}))
+        self.add_node("z3", ["z2"], MarkovKernelApplication("decoder2", (),
+                                                            {}))
+        self.add_node("X", ["z3"], MarkovKernelApplication("likelihood", (),
+                                                           {}))
 
-    def generate(self, xs=None, **kwargs):
-        if xs is not None:
-            B = xs.shape[0]
-            self.graph.clamp("X", xs)
-        else:
-            B = 1
+    def forward(self, xs=None, **kwargs):
+        B = xs.shape[0] if xs is not None else 1
         self.prior.batch_shape = (B,)
         self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
-        with clamp_graph(self.graph, X=xs) as graph:
-            return graph.forward()
-
-    def guide(self, xs=None, lr=1e-3):
-        if xs is not None:
-            B = xs.shape[0]
-            self.graph.clamp("X", xs)
-        else:
-            B = 1
-        self.prior.batch_shape = (B,)
-        self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
-        self.likelihood.batch_shape = (B,)
-        with clamp_graph(self.graph, X=xs) as graph:
-            return graph.guide(lr=lr)
+        return super().forward(X=xs, B=B, **kwargs)
 
 class BouncingMnistPpc(BaseModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
