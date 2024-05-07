@@ -163,18 +163,29 @@ class FashionMnistDataModule(L.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.fashionmnist_val), batch_size=BATCH_SIZE)
 
-class BouncingMnistDataLoader(BaseDataLoader):
-    """
-    Bouncing MNIST data loading using BaseDataLoader
-    """
-    def __init__(self, data_dir, batch_size, shuffle=False, validation_split=0.0, num_workers=1, training=True):
-        trsfm = transforms.Compose([
+class BouncingMnistDataModule(L.LightningDataModule):
+    def __init__(self, data_dir, batch_size):
+        super().__init__()
+        self.data_dir = data_dir
+        self.transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Lambda(lambda t: t.mT)
         ])
-        self.data_dir = data_dir
-        self.dataset = IndexedDataset(BouncingMNIST(self.data_dir, transform=trsfm))
-        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
+
+    def setup(self, stage=None):
+        bouncingmnist_full = BouncingMNIST(self.data_dir, transform=self.transform)
+        self.bmnist_train, self.bmnist_val = random_split(
+            bouncingmnist_full, [0.9 * len(bouncingmnist_full),
+                                 0.1 * len(bouncingmnist_full)]
+        )
+
+    def train_dataloader(self):
+        return DataLoader(IndexedDataset(self.bmnist_train),
+                          batch_size=BATCH_SIZE)
+
+    def val_dataloader(self):
+        return DataLoader(IndexedDataset(self.bmnist_val),
+                          batch_size=BATCH_SIZE)
 
 class MiniBouncingMnistDataLoader(BaseDataLoader):
     """
