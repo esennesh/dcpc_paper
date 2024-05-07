@@ -125,17 +125,43 @@ class EMnistDataModule(L.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.emnist_val), batch_size=BATCH_SIZE)
 
-class FashionMnistDataLoader(BaseDataLoader):
-    """
-    FashionMNIST data loading using BaseDataLoader
-    """
-    def __init__(self, data_dir, batch_size, shuffle=False, validation_split=0.0, num_workers=1, training=True, drop_last=False):
-        trsfm = transforms.Compose([
-            transforms.ToTensor(),
-        ])
+class FashionMnistDataModule(L.LightningDataModule):
+    def __init__(self, data_dir, batch_size):
+        super().__init__()
         self.data_dir = data_dir
-        self.dataset = IndexedDataset(datasets.FashionMNIST(self.data_dir, train=training, download=True, transform=trsfm))
-        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
+        self.transform = transforms.ToTensor()
+        self.dims = (1, 28, 28)
+
+    def prepare_data(self):
+        datasets.FashionMNIST(self.data_dir, split="balanced", train=True, download=True)
+        datasets.FashionMNIST(self.data_dir, split="balanced", train=False, download=True)
+
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+            fashionmnist_full = datasets.FashionMNIST(self.data_dir,
+                                                      split="balanced",
+                                                      train=True,
+                                                      transform=self.transform)
+            self.fashionmnist_train, self.fashionmnist_val = random_split(
+                fashionmnist_full, [0.9 * len(fashionmnist_full), 0.1 * len(fashionmnist_full)]
+            )
+
+        if stage == "test" or stage is None:
+            self.fashionmnist_test = datasets.FashionMNIST(self.data_dir,
+                                                           split="balanced",
+                                                           train=False,
+                                                           transform=self.transform)
+
+    def test_dataloader(self):
+        return DataLoader(IndexedDataset(self.fashionmnist_test),
+                          batch_size=BATCH_SIZE)
+
+    def train_dataloader(self):
+        return DataLoader(IndexedDataset(self.fashionmnist_train),
+                          batch_size=BATCH_SIZE)
+
+    def val_dataloader(self):
+        return DataLoader(IndexedDataset(self.fashionmnist_val), batch_size=BATCH_SIZE)
 
 class BouncingMnistDataLoader(BaseDataLoader):
     """
