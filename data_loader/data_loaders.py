@@ -91,17 +91,39 @@ class MnistDataModule(L.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.mnist_val), batch_size=BATCH_SIZE)
 
-class EMnistDataLoader(BaseDataLoader):
-    """
-    EMNIST data loading using BaseDataLoader
-    """
-    def __init__(self, data_dir, batch_size, shuffle=False, validation_split=0.0, num_workers=1, training=True, drop_last=False):
-        trsfm = transforms.Compose([
-            transforms.ToTensor(),
-        ])
+class EMnistDataModule(L.LightningDataModule):
+    def __init__(self, data_dir, batch_size):
+        super().__init__()
         self.data_dir = data_dir
-        self.dataset = IndexedDataset(datasets.EMNIST(self.data_dir, split="balanced", train=training, download=True, transform=trsfm))
-        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
+        self.transform = transforms.ToTensor()
+        self.dims = (1, 28, 28)
+
+    def prepare_data(self):
+        datasets.EMNIST(self.data_dir, split="balanced", train=True, download=True)
+        datasets.EMNIST(self.data_dir, split="balanced", train=False, download=True)
+
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+            emnist_full = datasets.EMNIST(self.data_dir, split="balanced",
+                                          train=True, transform=self.transform)
+            self.emnist_train, self.emnist_val = random_split(
+                emnist_full, [0.9 * len(emnist_full), 0.1 * len(emnist_full)]
+            )
+
+        if stage == "test" or stage is None:
+            self.emnist_test = EMNIST(self.data_dir, split="balanced",
+                                      train=False, transform=self.transform)
+
+    def test_dataloader(self):
+        return DataLoader(IndexedDataset(self.emnist_test),
+                          batch_size=BATCH_SIZE)
+
+    def train_dataloader(self):
+        return DataLoader(IndexedDataset(self.emnist_train),
+                          batch_size=BATCH_SIZE)
+
+    def val_dataloader(self):
+        return DataLoader(IndexedDataset(self.emnist_val), batch_size=BATCH_SIZE)
 
 class FashionMnistDataLoader(BaseDataLoader):
     """
