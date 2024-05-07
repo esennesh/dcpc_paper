@@ -75,13 +75,13 @@ class BouncingMnistAsvi(ImportanceModel):
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
 class MnistPpc(PpcGraphicalModel):
-    def __init__(self, digit_side=28, z_dims=[20, 128, 256]):
+    def __init__(self, x_dims, z_dims=[20, 128, 256]):
         super().__init__()
         self.prior = GaussianPrior(z_dims[0])
         self.decoder1 = ConditionalGaussian(z_dims[0], z_dims[1])
         self.decoder2 = ConditionalGaussian(z_dims[1], z_dims[2])
         self.likelihood = MlpBernoulliLikelihood(z_dims[2],
-                                                 (digit_side, digit_side))
+                                                 (x_dims[-1], x_dims[-1]))
 
         self.add_node("z1", [], MarkovKernelApplication("prior", (), {}))
         self.add_node("z2", ["z1"], MarkovKernelApplication("decoder1", (),
@@ -92,7 +92,12 @@ class MnistPpc(PpcGraphicalModel):
                                                            {}))
 
     def forward(self, xs=None, **kwargs):
-        B = xs.shape[0] if xs is not None else 1
+        if 'B' in kwargs:
+            B = kwargs.pop('B')
+        elif xs is not None:
+            B = xs.shape[0]
+        else:
+            B = 1
         self.prior.batch_shape = (B,)
         self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
