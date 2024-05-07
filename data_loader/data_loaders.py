@@ -232,28 +232,52 @@ class CelebADataModule(L.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.celeba_val), batch_size=BATCH_SIZE)
 
-class Flowers102DataLoader(BaseDataLoader):
-    """
-    Oxford 102 Flower data loading use BaseDataLoader
-    """
-    def __init__(self, data_dir, batch_size, img_side=128, shuffle=False, validation_split=0.0, num_workers=1, training=True, drop_last=False):
-        trsfm = transforms.Compose([
-            transforms.Resize(img_side),
-            transforms.CenterCrop(img_side),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(), # turn into torch Tensor of shape CHW, divide by 255
-            transforms.Lambda(lambda t: (t * 2) - 1),
-        ])
+class Flowers102DataModule(L.LightningDataModule):
+    def __init__(self, data_dir, batch_size, side=64):
+        super().__init__()
         self.data_dir = data_dir
-        self.dataset = IndexedDataset(datasets.Flowers102(self.data_dir, split="train" if training else "test", download=True, transform=trsfm))
-        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
-
-    @property
-    def reverse_transform(self):
-        return transforms.Compose([
+        self.reverse_transform = transforms.Compose([
             transforms.Lambda(lambda t: (t + 1) / 2),
             transforms.Lambda(lambda t: t.permute(1, 2, 0)), # CHW to HWC
             transforms.Lambda(lambda t: t * 255.),
             transforms.Lambda(lambda t: t.numpy().astype(np.uint8)),
             transforms.ToPILImage(),
         ])
+        self.transform = transforms.Compose([
+            transforms.Resize(img_side),
+            transforms.CenterCrop(img_side),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(), # turn into torch Tensor of shape CHW, divide by 255
+            transforms.Lambda(lambda t: (t * 2) - 1),
+        ])
+        self.dims = (3, side, side)
+
+    def prepare_data(self):
+        datasets.Flowers102(self.data_dir, split="test", download=True)
+        datasets.Flowers102(self.data_dir, split="train", download=True)
+        datasets.Flowers102(self.data_dir, split="valid", download=True)
+
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+            self.flowers102_train = datasets.Flowers102(self.data_dir, split="train",
+                                                        download=True,
+                                                        transform=self.transform)
+            self.flowers102_val = datasets.Flowers102(self.data_dir, split="valid",
+                                                      download=True,
+                                                      transform=self.transform)
+
+        if stage == "test" or stage is None:
+            self.flowers102_test = datasets.Flowers102(self.data_dir, split="test",
+                                                       download=True,
+                                                       transform=self.transform)
+
+    def test_dataloader(self):
+        return DataLoader(IndexedDataset(self.flowers102_test),
+                          batch_size=BATCH_SIZE)
+
+    def train_dataloader(self):
+        return DataLoader(IndexedDataset(self.flowers102_train),
+                          batch_size=BATCH_SIZE)
+
+    def val_dataloader(self):
+        return DataLoader(IndexedDataset(self.flowers102_val), batch_size=BATCH_SIZE)
