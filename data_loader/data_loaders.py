@@ -1,10 +1,11 @@
+import lightning as L
 import numpy as np
 import os
 from PIL import Image
 import torch
+from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 from typing import Any, Callable, Optional, Tuple
-from base import BaseDataLoader
 
 class IndexedDataset(torch.utils.data.Dataset):
     def __init__(self, dataset):
@@ -57,17 +58,38 @@ class MiniBouncingMnist(BouncingMNIST):
         result = torch.cat(data, dim=0)
         return result
 
-class MnistDataLoader(BaseDataLoader):
-    """
-    MNIST data loading demo using BaseDataLoader
-    """
-    def __init__(self, data_dir, batch_size, shuffle=False, validation_split=0.0, num_workers=1, training=True, drop_last=False):
-        trsfm = transforms.Compose([
-            transforms.ToTensor(),
-        ])
+class MnistDataModule(L.LightningDataModule):
+    def __init__(self, data_dir, batch_size):
+        super().__init__()
         self.data_dir = data_dir
-        self.dataset = IndexedDataset(datasets.MNIST(self.data_dir, train=training, download=True, transform=trsfm))
-        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
+        self.transform = transforms.ToTensor()
+        self.dims = (1, 28, 28)
+
+    def prepare_data(self):
+        datasets.MNIST(self.data_dir, train=True, download=True)
+        datasets.MNIST(self.data_dir, train=False, download=True)
+
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+            mnist_full = datasets.MNIST(self.data_dir, train=True,
+                                        transform=self.transform)
+            self.mnist_train, self.mnist_val = random_split(mnist_full, [55000,
+                                                                         5000])
+
+        if stage == "test" or stage is None:
+            self.mnist_test = MNIST(self.data_dir, train=False,
+                                    transform=self.transform)
+
+    def test_dataloader(self):
+        return DataLoader(IndexedDataset(self.mnist_test),
+                          batch_size=BATCH_SIZE)
+
+    def train_dataloader(self):
+        return DataLoader(IndexedDataset(self.mnist_train),
+                          batch_size=BATCH_SIZE)
+
+    def val_dataloader(self):
+        return DataLoader(IndexedDataset(self.mnist_val), batch_size=BATCH_SIZE)
 
 class EMnistDataLoader(BaseDataLoader):
     """
