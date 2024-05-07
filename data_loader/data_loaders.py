@@ -189,20 +189,48 @@ class MiniBouncingMnistDataLoader(BaseDataLoader):
         self.dataset = IndexedDataset(MiniBouncingMnist(self.data_dir, transform=trsfm))
         super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
 
-class CelebADataLoader(BaseDataLoader):
-    """
-    CelebA data loading using BaseDataLoader
-    """
-    def __init__(self, data_dir, batch_size, img_side=64, shuffle=False, validation_split=0.0, num_workers=1, training=True, drop_last=False):
-        trsfm = transforms.Compose([
-            transforms.Resize(img_side),
-            transforms.CenterCrop(img_side),
+class CelebADataModule(L.LightningDataModule):
+    def __init__(self, data_dir, batch_size, side=64):
+        super().__init__()
+        self.data_dir = data_dir
+        self.reverse_transform = transforms.Lambda(lambda t: t.mT)
+        self.transform = transforms.Compose([
+            transforms.Resize(side),
+            transforms.CenterCrop(side),
             transforms.ToTensor(),
             transforms.Lambda(lambda t: t.mT),
         ])
-        self.data_dir = data_dir
-        self.dataset = IndexedDataset(datasets.CelebA(self.data_dir, split="train" if training else "valid", download=True, transform=trsfm))
-        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, drop_last=drop_last)
+        self.dims = (3, side, side)
+
+    def prepare_data(self):
+        datasets.CelebA(self.data_dir, split="test", download=True)
+        datasets.CelebA(self.data_dir, split="train", download=True)
+        datasets.CelebA(self.data_dir, split="valid", download=True)
+
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+            self.celeba_train = datasets.CelebA(self.data_dir, split="train",
+                                                download=True,
+                                                transform=self.transform)
+            self.celeba_val = datasets.CelebA(self.data_dir, split="valid",
+                                              download=True,
+                                              transform=self.transform)
+
+        if stage == "test" or stage is None:
+            self.celeba_test = datasets.CelebA(self.data_dir, split="test",
+                                               download=True,
+                                               transform=self.transform)
+
+    def test_dataloader(self):
+        return DataLoader(IndexedDataset(self.celeba_test),
+                          batch_size=BATCH_SIZE)
+
+    def train_dataloader(self):
+        return DataLoader(IndexedDataset(self.celeba_train),
+                          batch_size=BATCH_SIZE)
+
+    def val_dataloader(self):
+        return DataLoader(IndexedDataset(self.celeba_val), batch_size=BATCH_SIZE)
 
 class Flowers102DataLoader(BaseDataLoader):
     """
