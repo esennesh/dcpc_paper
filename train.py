@@ -41,6 +41,8 @@ def from_file(config_file, checkpoint=None):
     return config, setup(config)
 
 def main(config):
+    logger = config.get_logger("train")
+    logger.info(config.log_dir)
     dm, model, trainer = setup(config)
     trainer.fit(model, dm)
 
