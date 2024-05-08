@@ -280,11 +280,13 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
             kwargs.pop(k)
         return super().forward(*args, **kwargs)
 
-    def generate(self, **kwargs):
+    def model(self, **kwargs):
         results = ()
 
         for site, kernel in self.sweep():
             density = kernel(*self.parent_vals(site))
+            if site in kwargs:
+                self.clamp(site, kwargs[site])
             if self.nodes[site]['is_observed']:
                 obs = self.nodes[site]['value']
             else:
