@@ -129,9 +129,11 @@ class PpcGraphicalModel(GraphicalModel):
 
         return dist.Delta(z_next, log_cc - log_Zcc, event_dim=event_dim)
 
-    def guide(self, lr=1e-3):
+    def guide(self, lr=1e-3, **kwargs):
         results = ()
         for site, kernel in self.sweep(forward=False):
+            if site in kwargs:
+                self.clamp(site, kwargs[site])
             if not self.nodes[site]["is_observed"]:
                 posterior = self.get_posterior(site, kernel.func.event_dim,
                                                lr=lr)
