@@ -61,6 +61,7 @@ class MiniBouncingMnist(BouncingMNIST):
 class MnistDataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size):
         super().__init__()
+        self.batch_size = batch_size
         self.data_dir = data_dir
         self.transform = transforms.ToTensor()
         self.dims = (1, 28, 28)
@@ -81,15 +82,16 @@ class MnistDataModule(L.LightningDataModule):
                                     transform=self.transform)
 
     def test_dataloader(self):
-        return DataLoader(IndexedDataset(self.mnist_test),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.mnist_test), num_workers=2,
+                          batch_size=self.batch_size)
 
     def train_dataloader(self):
-        return DataLoader(IndexedDataset(self.mnist_train),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.mnist_train), num_workers=2,
+                          batch_size=self.batch_size)
 
     def val_dataloader(self):
-        return DataLoader(IndexedDataset(self.mnist_val), batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.mnist_val), num_workers=2,
+                          batch_size=self.batch_size)
 
 class EMnistDataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size):
