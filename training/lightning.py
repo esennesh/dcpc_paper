@@ -150,10 +150,13 @@ class LightningPpc(L.LightningModule):
         loss = -log_weight.mean()
         self._save_particles(indices, train=False)
 
-        self.log("valid/ess", metric.ess(trace, log_weight.detach()))
+        self.log("valid/ess", metric.ess(trace, log_weight.detach()),
+                 sync_dist=True)
         self.log("valid/log_joint", metric.log_joint(trace,
-                                                     log_weight.detach()))
+                                                     log_weight.detach()),
+                 sync_dist=True)
         self.log("valid/log_marginal", metric.log_marginal(trace,
-                                                           log_weight.detach()))
-        self.log("valid/loss", loss)
+                                                           log_weight.detach()),
+                 sync_dist=True)
+        self.log("valid/loss", loss, sync_dist=True)
         return loss
