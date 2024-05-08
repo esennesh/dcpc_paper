@@ -151,11 +151,9 @@ class ConditionalGaussian(MarkovKernel):
         return 1
 
     def forward(self, hs: torch.Tensor) -> dist.Distribution:
-        P, B, _ = hs.shape
-
-        scale = self.covariance.expand(P, B, *self.covariance.shape)
-        return dist.MultivariateNormal(self.decoder(hs),
-                                       scale_tril=torch.tril(scale))
+        scale = torch.tril(self.covariance).expand(*self.batch_shape,
+                                                   *self.covariance.shape)
+        return dist.MultivariateNormal(self.decoder(hs), scale_tril=scale)
 
 class MlpBernoulliLikelihood(MarkovKernel):
     def __init__(self, in_dim, out_shape, nonlinearity=nn.ReLU):
