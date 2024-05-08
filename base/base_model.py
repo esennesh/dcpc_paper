@@ -40,10 +40,10 @@ class ImportanceModel(BaseModel):
         with pyro.plate_stack("importance", (P, B)):
             if prior:
                 return self.model(*args, **kwargs)
-            return utils.importance(self.generate, self.guide, *args, **kwargs)
+            return utils.importance(self.model, self.guide, *args, **kwargs)
 
     @abstractmethod
-    def generate(self, *args, **kwargs):
+    def model(self, *args, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
