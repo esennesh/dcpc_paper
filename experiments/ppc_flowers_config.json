@@ -5,8 +5,7 @@
         "type": "DiffusionPpc",
         "args": {
             "flash_attn": false,
-            "img_side": 64,
-            "T": 1000,
+            "T": 100,
             "thick": false
         }
     },
@@ -21,15 +20,11 @@
         }
     },
     "data_module": {
-        "type": "Flowers102DataLoader",
+        "type": "Flowers102DataModule",
         "args":{
             "data_dir": "data/",
-            "drop_last": false,
-            "shuffle": true,
-            "batch_size": 8,
-            "validation_split": 0.1,
-            "num_workers": 2,
-            "img_side": 64
+            "batch_size": 16,
+            "side": 64
         }
     },
     "lmodule": {
@@ -37,7 +32,7 @@
         "args": {
             "cooldown": 50,
             "factor": 0.9,
-            "lr": 1e-5,
+            "lr": 1e-6,
             "num_particles": 2,
             "num_sweeps": 1,
             "patience": 100
@@ -51,6 +46,7 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
+          "devices": 4,
           "max_epochs": 1000,
           "min_epochs": 1
         }
