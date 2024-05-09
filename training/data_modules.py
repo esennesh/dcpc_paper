@@ -178,18 +178,19 @@ class BouncingMnistDataModule(L.LightningDataModule):
 
     def setup(self, stage=None):
         bouncingmnist_full = BouncingMNIST(self.data_dir, transform=self.transform)
+        train_length = int(0.9 * len(bouncingmnist_full))
+        valid_length = len(bouncingmnist_full) - train_length
         self.bmnist_train, self.bmnist_val = random_split(
-            bouncingmnist_full, [0.9 * len(bouncingmnist_full),
-                                 0.1 * len(bouncingmnist_full)]
+            bouncingmnist_full, [train_length, valid_length]
         )
 
     def train_dataloader(self):
-        return DataLoader(IndexedDataset(self.bmnist_train),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.bmnist_train), num_workers=2,
+                          batch_size=self.batch_size)
 
     def val_dataloader(self):
-        return DataLoader(IndexedDataset(self.bmnist_val),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.bmnist_val), num_workers=2,
+                          batch_size=self.batch_size)
 
 class MiniBouncingMnistDataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size):
