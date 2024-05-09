@@ -135,30 +135,30 @@ class BouncingMnistPpc(PpcGraphicalModel):
         return torch.stack(recons, dim=2)
 
 class DiffusionPpc(PpcGraphicalModel):
-    def __init__(self, channels=3, dim_mults=(1, 2, 4, 8), thick=True,
-                 flash_attn=True, hidden_dim=64, img_side=128, T=100):
+    def __init__(self, dims, dim_mults=(1, 2, 4, 8), thick=True,
+                 flash_attn=True, hidden_dim=64, T=100):
         super().__init__()
-        self._channels = channels
-        self._img_side = img_side
+        self._channels = dims[0]
         self._num_times = T
 
         self.diffusion = DiffusionStep(sigmoid_beta_schedule(T),
                                        dim_mults=dim_mults,
                                        flash_attn=flash_attn,
                                        hidden_dim=hidden_dim,
-                                       thick=thick, x_side=img_side)
-        self.prior = DiffusionPrior(channels, img_side)
+                                       thick=thick, x_side=dims[-1])
+        self.prior = DiffusionPrior(dims[0], dims[-1])
 
-        self.add_node("X__%d" % T, [], self.prior)
+        self.add_node("X__%d" % T, [], MarkovKernelApplication("prior", (),
+                                                               {}))
         for t in reversed(range(T)):
-            step_kernel = MarkovKernelApplication(self.diffusion, (), {"t": t})
+            step_kernel = MarkovKernelApplication("diffusion", (), {"t": t})
             self.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
 
     def forward(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
         self.diffusion.batch_shape = (B,)
         self.prior.batch_shape = (B,)
-        return super().forward(X__0=xs, **kwargs)
+        return super().forward(X__0=xs, B=B, **kwargs)
 
 class CelebAPpc(PpcGraphicalModel):
     def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
