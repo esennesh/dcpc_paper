@@ -260,6 +260,7 @@ class CelebADataModule(L.LightningDataModule):
 class Flowers102DataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size, side=64):
         super().__init__()
+        self.batch_size = batch_size
         self.data_dir = data_dir
         self.reverse_transform = transforms.Compose([
             transforms.Lambda(lambda t: (t + 1) / 2),
@@ -269,8 +270,8 @@ class Flowers102DataModule(L.LightningDataModule):
             transforms.ToPILImage(),
         ])
         self.transform = transforms.Compose([
-            transforms.Resize(img_side),
-            transforms.CenterCrop(img_side),
+            transforms.Resize(side),
+            transforms.CenterCrop(side),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(), # turn into torch Tensor of shape CHW, divide by 255
             transforms.Lambda(lambda t: (t * 2) - 1),
@@ -280,14 +281,14 @@ class Flowers102DataModule(L.LightningDataModule):
     def prepare_data(self):
         datasets.Flowers102(self.data_dir, split="test", download=True)
         datasets.Flowers102(self.data_dir, split="train", download=True)
-        datasets.Flowers102(self.data_dir, split="valid", download=True)
+        datasets.Flowers102(self.data_dir, split="val", download=True)
 
     def setup(self, stage=None):
         if stage == "fit" or stage is None:
             self.flowers102_train = datasets.Flowers102(self.data_dir, split="train",
                                                         download=True,
                                                         transform=self.transform)
-            self.flowers102_val = datasets.Flowers102(self.data_dir, split="valid",
+            self.flowers102_val = datasets.Flowers102(self.data_dir, split="val",
                                                       download=True,
                                                       transform=self.transform)
 
@@ -297,12 +298,13 @@ class Flowers102DataModule(L.LightningDataModule):
                                                        transform=self.transform)
 
     def test_dataloader(self):
-        return DataLoader(IndexedDataset(self.flowers102_test),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.flowers102_test), num_workers=2,
+                          batch_size=self.batch_size)
 
     def train_dataloader(self):
-        return DataLoader(IndexedDataset(self.flowers102_train),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.flowers102_train), num_workers=2,
+                          batch_size=self.batch_size)
 
     def val_dataloader(self):
-        return DataLoader(IndexedDataset(self.flowers102_val), batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.flowers102_val), num_workers=2,
+                          batch_size=self.batch_size)
