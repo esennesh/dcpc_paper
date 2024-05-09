@@ -1,17 +1,26 @@
 {
     "name": "FlowersDiffusion_Ppc",
-    "n_gpu": 1,
 
     "arch": {
         "type": "DiffusionPpc",
         "args": {
             "flash_attn": false,
             "img_side": 64,
-            "T": 400,
+            "T": 1000,
             "thick": false
         }
     },
-    "data_loader": {
+    "checkpoint": {
+        "type": "ModelCheckpoint",
+        "args": {
+            "auto_insert_metric_name": false,
+            "every_n_epochs": 10,
+            "filename": "checkpoint_{epoch}",
+            "mode": "min",
+            "monitor": "valid/loss"
+        }
+    },
+    "data_module": {
         "type": "Flowers102DataLoader",
         "args":{
             "data_dir": "data/",
@@ -23,35 +32,27 @@
             "img_side": 64
         }
     },
-    "optimizer": {
-        "type": "Adam",
+    "lmodule": {
+        "type": "LightningPpc",
         "args": {
-            "optim_args": {
-                "lr": 1e-5,
-                "weight_decay": 0,
-                "amsgrad": true
-            }
+            "cooldown": 50,
+            "factor": 0.9,
+            "lr": 1e-5,
+            "num_particles": 2,
+            "num_sweeps": 1,
+            "patience": 100
         }
     },
-    "lr_scheduler": {
-        "type": "ReduceLROnPlateau",
-        "args": {
-          "patience": 100,
-          "cooldown": 50,
-          "factor": 0.9
-        }
+    "logger": {
+        "type": "TensorBoardLogger",
+        "args": {}
     },
-    "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 1000,
-        "monitor": "min val_loss",
-        "save_dir": "saved/",
-        "save_period": 100,
-        "tensorboard": true,
-        "verbosity": 2,
-        "type": "PpcTrainer",
+        "type": "Trainer",
         "args": {
-            "num_particles": 1
+          "default_root_dir": "saved/",
+          "max_epochs": 1000,
+          "min_epochs": 1
         }
     }
 }
