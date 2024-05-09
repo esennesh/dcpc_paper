@@ -46,7 +46,7 @@ class BouncingMNIST(datasets.VisionDataset):
     def __len__(self):
         return len(self.data)
 
-class MiniBouncingMnist(BouncingMNIST):
+class MiniBouncingMNIST(BouncingMNIST):
     def _load_data(self):
         data = []
         for file in os.listdir(self.root):
