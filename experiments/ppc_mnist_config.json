@@ -19,7 +19,7 @@
         "type": "MnistDataModule",
         "args": {
             "data_dir": "data/",
-            "batch_size": 4096
+            "batch_size": 16384
         }
     },
     "lmodule": {
@@ -41,7 +41,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "max_epochs": 10,
+          "devices": 1,
+          "max_epochs": 2000,
           "min_epochs": 1
         }
     }
