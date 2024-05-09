@@ -196,7 +196,6 @@ class DiffusionStep(MarkovKernel):
         super().__init__()
         self.batch_shape = ()
         self.register_buffer('betas', betas.to(dtype=torch.float))
-        self.clips = clip_lims
 
         if thick:
             self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
