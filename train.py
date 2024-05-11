@@ -33,7 +33,7 @@ def setup(config):
                                  dirpath=config.save_dir)
     trainer = config.init_obj("trainer", lightning.pytorch,
                               callbacks=[checkpoint], logger=logger,
-                              log_every_n_steps=3)
+                              log_every_n_steps=1)
     return data_module, lmodule, trainer
 
 def from_file(config_file, checkpoint=None):
