@@ -254,15 +254,16 @@ class CelebADataModule(L.LightningDataModule):
                                                transform=self.transform)
 
     def test_dataloader(self):
-        return DataLoader(IndexedDataset(self.celeba_test),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.celeba_test), num_workers=2,
+                          batch_size=self.batch_size)
 
     def train_dataloader(self):
-        return DataLoader(IndexedDataset(self.celeba_train),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.celeba_train), num_workers=2,
+                          batch_size=self.batch_size)
 
     def val_dataloader(self):
-        return DataLoader(IndexedDataset(self.celeba_val), batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.celeba_val), num_workers=2,
+                          batch_size=self.batch_size)
 
 class Flowers102DataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size, side=64):
