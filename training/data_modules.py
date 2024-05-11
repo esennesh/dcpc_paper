@@ -223,6 +223,7 @@ class MiniBouncingMnistDataModule(L.LightningDataModule):
 class CelebADataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size, side=64):
         super().__init__()
+        self.batch_size = batch_size
         self.data_dir = data_dir
         self.reverse_transform = transforms.Lambda(lambda t: t.mT)
         self.transform = transforms.Compose([
