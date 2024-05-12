@@ -167,19 +167,20 @@ class DiffusionPpc(PpcGraphicalModel):
         return super().forward(X__0=xs, B=B, **kwargs)
 
 class CelebAPpc(PpcGraphicalModel):
-    def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
+    def __init__(self, dims, z_dim=40, hidden_dim=256):
         super().__init__()
-        self._channels = channels
+        self._channels = dims[0]
 
         self.prior = GaussianPrior(z_dim, False)
-        self.likelihood = ConvolutionalDecoder(channels, z_dim, hidden_dim,
-                                               img_side)
+        self.likelihood = ConvolutionalDecoder(dims[0], z_dim, hidden_dim,
+                                               dims[-1])
 
-        self.add_node("z", [], self.prior)
-        self.add_node("X", ["z"], self.likelihood)
+        self.add_node("z", [], MarkovKernelApplication("prior", (), {}))
+        self.add_node("X", ["z"], MarkovKernelApplication("likelihood", (),
+                                                          {}))
 
     def forward(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
         self.prior.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
-        return super().forward(X=xs, **kwargs)
+        return super().forward(X=xs, B=B, **kwargs)
