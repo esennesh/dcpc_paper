@@ -248,7 +248,7 @@ class ConvolutionalDecoder(MarkovKernel):
         loc = self.convs(hs).view(P, B, self._channels, self._img_side,
                                   self._img_side)
         scale = self.log_scale.exp().expand(P, B, *self.log_scale.shape)
-        return dist.Normal(F.sigmoid(loc), scale).to_event(3)
+        return dist.Normal(loc, scale).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def __init__(self):
