@@ -22,7 +22,7 @@
         "type": "MiniBouncingMnistDataModule",
         "args": {
             "data_dir": "data/",
-            "batch_size": 90
+            "batch_size": 512
         }
     },
     "lmodule": {
@@ -44,8 +44,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": 1,
-          "max_epochs": 100,
+          "devices": 2,
+          "max_epochs": 1000,
           "min_epochs": 1
         }
     }
