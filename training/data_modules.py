@@ -130,40 +130,42 @@ class EMnistDataModule(L.LightningDataModule):
 class FashionMnistDataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size):
         super().__init__()
+        self.batch_size = batch_size
         self.data_dir = data_dir
         self.transform = transforms.ToTensor()
         self.dims = (1, 28, 28)
 
     def prepare_data(self):
-        datasets.FashionMNIST(self.data_dir, split="balanced", train=True, download=True)
-        datasets.FashionMNIST(self.data_dir, split="balanced", train=False, download=True)
+        datasets.FashionMNIST(self.data_dir, train=True, download=True)
+        datasets.FashionMNIST(self.data_dir, train=False, download=True)
 
     def setup(self, stage=None):
         if stage == "fit" or stage is None:
             fashionmnist_full = datasets.FashionMNIST(self.data_dir,
-                                                      split="balanced",
                                                       train=True,
                                                       transform=self.transform)
+            num_validation = int(0.1 * len(fashionmnist_full))
+            num_training = len(fashionmnist_full) - num_validation
             self.fashionmnist_train, self.fashionmnist_val = random_split(
-                fashionmnist_full, [0.9 * len(fashionmnist_full), 0.1 * len(fashionmnist_full)]
+                fashionmnist_full, [num_training, num_validation]
             )
 
         if stage == "test" or stage is None:
             self.fashionmnist_test = datasets.FashionMNIST(self.data_dir,
-                                                           split="balanced",
                                                            train=False,
                                                            transform=self.transform)
 
     def test_dataloader(self):
-        return DataLoader(IndexedDataset(self.fashionmnist_test),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.fashionmnist_test), num_workers=2,
+                          batch_size=self.batch_size)
 
     def train_dataloader(self):
-        return DataLoader(IndexedDataset(self.fashionmnist_train),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.fashionmnist_train), num_workers=2,
+                          batch_size=self.batch_size)
 
     def val_dataloader(self):
-        return DataLoader(IndexedDataset(self.fashionmnist_val), batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.fashionmnist_val), num_workers=2,
+                          batch_size=self.batch_size)
 
 class BouncingMnistDataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size):
