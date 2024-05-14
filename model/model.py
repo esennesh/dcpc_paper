@@ -162,6 +162,8 @@ class DiffusionPpc(PpcGraphicalModel):
 
     def forward(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
+        if B == 1 and 'B' in kwargs:
+            B = kwargs.pop('B')
         self.diffusion.batch_shape = (B,)
         self.prior.batch_shape = (B,)
         return super().forward(X__0=xs, B=B, **kwargs)
