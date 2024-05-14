@@ -75,13 +75,13 @@ class BouncingMnistAsvi(ImportanceModel):
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
 class MnistPpc(PpcGraphicalModel):
-    def __init__(self, digit_side=28, z_dims=[20, 128, 256]):
+    def __init__(self, x_dims, z_dims=[20, 128, 256]):
         super().__init__()
         self.prior = GaussianPrior(z_dims[0])
         self.decoder1 = ConditionalGaussian(z_dims[0], z_dims[1])
         self.decoder2 = ConditionalGaussian(z_dims[1], z_dims[2])
         self.likelihood = MlpBernoulliLikelihood(z_dims[2],
-                                                 (digit_side, digit_side))
+                                                 (x_dims[-1], x_dims[-1]))
 
         self.add_node("z1", [], MarkovKernelApplication("prior", (), {}))
         self.add_node("z2", ["z1"], MarkovKernelApplication("decoder1", (),
@@ -92,83 +92,97 @@ class MnistPpc(PpcGraphicalModel):
                                                            {}))
 
     def forward(self, xs=None, **kwargs):
-        B = xs.shape[0] if xs is not None else 1
+        if 'B' in kwargs:
+            B = kwargs.pop('B')
+        elif xs is not None:
+            B = xs.shape[0]
+        else:
+            B = 1
         self.prior.batch_shape = (B,)
         self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
         return super().forward(X=xs, B=B, **kwargs)
 
 class BouncingMnistPpc(PpcGraphicalModel):
-    def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
-                 x_side=96, z_what_dim=10, z_where_dim=2):
+    def __init__(self, dims, digit_side=28, hidden_dim=400, num_digits=3,
+                 z_what_dim=10, z_where_dim=2, mnist_mean=None):
         super().__init__()
         self._num_digits = num_digits
-        self._num_times = T
+        self._num_times = dims[0]
 
-        self.decoder = DigitsDecoder(digit_side, hidden_dim, x_side, z_what_dim)
+        self.decoder = DigitsDecoder(digit_side, hidden_dim, dims[-1],
+                                     z_what_dim, mnist_mean)
         self.digit_features = DigitFeatures(num_digits, z_what_dim)
         self.digit_positions = DigitPositions(num_digits, z_where_dim)
 
-        self.add_node("z_what", [], self.digit_features)
-        for t in range(T):
+        self.add_node("z_what", [],
+                      MarkovKernelApplication("digit_features", (), {}))
+        for t in range(dims[0]):
             if t == 0:
                 where_kernel = MarkovKernelApplication("digit_positions",
                                                        (None,), {})
                 self.add_node("z_where__0", [], where_kernel)
             else:
-                self.add_node("z_where__%d" % t, ["z_where__%d" % (t-1)],
-                                    self.digit_positions)
+                self.add_node(
+                    "z_where__%d" % t, ["z_where__%d" % (t-1)],
+                    MarkovKernelApplication("digit_positions", (), {})
+                )
             self.add_node("X__%d" % t, ["z_what", "z_where__%d" % t],
-                          self.decoder)
+                          MarkovKernelApplication("decoder", (), {}))
 
     def forward(self, xs=None, **kwargs):
         B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
+        if B == 1 and 'B' in kwargs:
+            B = kwargs.pop('B')
+        self.decoder.batch_shape = (B,)
         self.digit_features.batch_shape = (B,)
         self.digit_positions.batch_shape = (B,)
         clamps = {"X__%d" % t: xs[:, t] for t in range(T) if xs is not None}
-        recons = super().forward(**clamps, **kwargs)
-        return torch.stack(recons, dim=2)
+        return super().forward(**clamps, B=B, **kwargs)
 
 class DiffusionPpc(PpcGraphicalModel):
-    def __init__(self, channels=3, dim_mults=(1, 2, 4, 8), thick=True,
-                 flash_attn=True, hidden_dim=64, img_side=128, T=100):
+    def __init__(self, dims, dim_mults=(1, 2, 4, 8), thick=True,
+                 flash_attn=True, hidden_dim=64, T=100):
         super().__init__()
-        self._channels = channels
-        self._img_side = img_side
+        self._channels = dims[0]
         self._num_times = T
 
         self.diffusion = DiffusionStep(sigmoid_beta_schedule(T),
                                        dim_mults=dim_mults,
                                        flash_attn=flash_attn,
                                        hidden_dim=hidden_dim,
-                                       thick=thick, x_side=img_side)
-        self.prior = DiffusionPrior(channels, img_side)
+                                       thick=thick, x_side=dims[-1])
+        self.prior = DiffusionPrior(dims[0], dims[-1])
 
-        self.add_node("X__%d" % T, [], self.prior)
+        self.add_node("X__%d" % T, [], MarkovKernelApplication("prior", (),
+                                                               {}))
         for t in reversed(range(T)):
-            step_kernel = MarkovKernelApplication(self.diffusion, (), {"t": t})
+            step_kernel = MarkovKernelApplication("diffusion", (), {"t": t})
             self.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
 
     def forward(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
         self.diffusion.batch_shape = (B,)
         self.prior.batch_shape = (B,)
-        return super().forward(X__0=xs, **kwargs)
+        return super().forward(X__0=xs, B=B, **kwargs)
 
 class CelebAPpc(PpcGraphicalModel):
-    def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
+    def __init__(self, dims, z_dim=40, hidden_dim=256):
         super().__init__()
-        self._channels = channels
+        self._channels = dims[0]
 
         self.prior = GaussianPrior(z_dim, False)
-        self.likelihood = ConvolutionalDecoder(channels, z_dim, hidden_dim,
-                                               img_side)
+        self.likelihood = ConvolutionalDecoder(dims[0], z_dim, hidden_dim,
+                                               dims[-1])
 
-        self.add_node("z", [], self.prior)
-        self.add_node("X", ["z"], self.likelihood)
+        self.add_node("z", [], MarkovKernelApplication("prior", (), {}))
+        self.add_node("X", ["z"], MarkovKernelApplication("likelihood", (),
+                                                          {}))
 
     def forward(self, xs=None, **kwargs):
         B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
+        if B == 1 and 'B' in kwargs:
+            B = kwargs.pop('B')
         self.prior.batch_shape = (B,)
         self.likelihood.batch_shape = (B,)
-        return super().forward(X=xs, **kwargs)
+        return super().forward(X=xs, B=B, **kwargs)

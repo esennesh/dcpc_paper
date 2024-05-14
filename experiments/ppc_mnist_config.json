@@ -1,51 +1,49 @@
 {
     "name": "Mnist_Ppc",
-    "n_gpu": 1,
 
     "arch": {
         "type": "MnistPpc",
         "args": {}
     },
-    "data_loader": {
-        "type": "MnistDataLoader",
-        "args":{
+    "checkpoint": {
+        "type": "ModelCheckpoint",
+        "args": {
+            "auto_insert_metric_name": false,
+            "every_n_epochs": 10,
+            "filename": "checkpoint_{epoch}",
+            "mode": "min",
+            "monitor": "valid/loss"
+        }
+    },
+    "data_module": {
+        "type": "MnistDataModule",
+        "args": {
             "data_dir": "data/",
-            "drop_last": false,
-            "shuffle": true,
-            "batch_size": 2048,
-            "validation_split": 0.1,
-            "num_workers": 2
+            "batch_size": 16384
         }
     },
-    "optimizer": {
-        "type": "Adam",
+    "lmodule": {
+        "type": "LightningPpc",
         "args": {
-            "optim_args": {
-                "lr": 0.01,
-                "weight_decay": 0,
-                "amsgrad": true
-            }
+            "cooldown": 50,
+            "factor": 0.9,
+            "lr": 0.001,
+            "num_particles": 4,
+            "num_sweeps": 1,
+            "patience": 100
         }
     },
-    "lr_scheduler": {
-        "type": "ReduceLROnPlateau",
-        "args": {
-          "patience": 100,
-          "cooldown": 50,
-          "factor": 0.9
-        }
+    "logger": {
+        "type": "TensorBoardLogger",
+        "args": {}
     },
-    "metrics": ["ess", "log_marginal", "log_joint"],
     "trainer": {
-        "epochs": 2000,
-        "monitor": "min val_loss",
-        "save_dir": "saved/",
-        "save_period": 10,
-        "tensorboard": true,
-        "verbosity": 2,
-        "type": "PpcTrainer",
+        "type": "Trainer",
         "args": {
-            "num_particles": 4
+          "default_root_dir": "saved/",
+          "devices": 1,
+          "max_epochs": 2000,
+          "min_epochs": 1
         }
     }
 }
