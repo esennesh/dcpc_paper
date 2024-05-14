@@ -245,7 +245,6 @@ class ConvolutionalDecoder(MarkovKernel):
             nn.SiLU() if img_side == 128 else nn.Identity(),
             nn.ConvTranspose2d(32, channels, 4, 2, 1) if img_side == 128 else nn.Identity(),
         )
-        self.log_scale = nn.Parameter(torch.zeros(channels, img_side, img_side))
 
     @property
     def event_dim(self):
@@ -257,8 +256,7 @@ class ConvolutionalDecoder(MarkovKernel):
         hs = hs.view(P*B, *hs.shape[2:], 1, 1)
         loc = self.convs(hs).view(P, B, self._channels, self._img_side,
                                   self._img_side)
-        scale = self.log_scale.exp().expand(P, B, *self.log_scale.shape)
-        return dist.Normal(loc, scale).to_event(3)
+        return dist.Normal(loc, 1.).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def __init__(self):
