@@ -201,10 +201,11 @@ class DiffusionPrior(MarkovKernel):
         return dist.Normal(loc, scale).to_event(3)
 
 class DiffusionStep(MarkovKernel):
-    def __init__(self, betas, x_side=128, thick=True,
+    def __init__(self, eta, betas, x_side=128, thick=True,
                  dim_mults=(1, 2, 4, 8), flash_attn=True, hidden_dim=64):
         super().__init__()
         self.batch_shape = ()
+        self.eta = eta
         self.register_buffer('betas', betas.to(dtype=torch.float))
 
         if thick:
@@ -219,11 +220,12 @@ class DiffusionStep(MarkovKernel):
 
     def forward(self, xs_prev: torch.Tensor, t=0) -> dist.Distribution:
         P, B, C, W, H = xs_prev.shape
-        loc = self.unet(xs_prev.view(P*B, C, W, H),
-                        torch.tensor(t, device=xs_prev.device,
-                                     dtype=torch.long).repeat(P*B))
-        return dist.Normal(F.tanh(loc.view(*xs_prev.shape)),
-                           self.betas[t]).to_event(3)
+        xs_prev = F.tanh(xs_prev)
+        score = self.unet(xs_prev.view(P*B, C, W, H),
+                          torch.tensor(t, device=xs_prev.device,
+                                       dtype=torch.long).repeat(P*B))
+        return dist.Normal(xs_prev + self.eta * score.view(*xs_prev.shape),
+                           2 * self.eta * self.betas[t]).to_event(3)
 
 class ConvolutionalDecoder(MarkovKernel):
     def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
