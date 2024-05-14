@@ -4,48 +4,49 @@
 
     "arch": {
         "type": "BouncingMnistPpc",
+        "args": {
+            "mnist_mean": "data/bmnist/mnist_mean.npy"
+        }
+    },
+    "checkpoint": {
+        "type": "ModelCheckpoint",
+        "args": {
+            "auto_insert_metric_name": false,
+            "every_n_epochs": 10,
+            "filename": "checkpoint_{epoch}",
+            "mode": "min",
+            "monitor": "valid/loss"
+        }
+    },
+    "data_module": {
+        "type": "MiniBouncingMnistDataModule",
+        "args": {
+            "data_dir": "data/",
+            "batch_size": 512
+        }
+    },
+    "lmodule": {
+        "type": "LightningPpc",
+        "args": {
+            "cooldown": 50,
+            "factor": 0.9,
+            "lr": 0.001,
+            "num_particles": 10,
+            "num_sweeps": 5,
+            "patience": 100
+        }
+    },
+    "logger": {
+        "type": "TensorBoardLogger",
         "args": {}
     },
-    "data_loader": {
-        "type": "MiniBouncingMnistDataLoader",
-        "args":{
-            "data_dir": "data/",
-            "batch_size": 45,
-            "shuffle": true,
-            "validation_split": 0.1,
-            "num_workers": 2
-        }
-    },
-    "optimizer": {
-        "type": "Adam",
-        "args": {
-            "optim_args": {
-                "lr": 0.001,
-                "weight_decay": 0,
-                "amsgrad": true
-            }
-        }
-    },
-    "lr_scheduler": {
-        "type": "ReduceLROnPlateau",
-        "args": {
-          "patience": 100,
-          "cooldown": 25,
-          "factor": 0.9
-        }
-    },
-    "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 1000,
-        "monitor": "min val_loss",
-        "save_dir": "saved/",
-        "save_period": 10,
-        "tensorboard": true,
-        "verbosity": 2,
-        "type": "PpcTrainer",
+        "type": "Trainer",
         "args": {
-            "num_particles": 10,
-            "num_sweeps": 5
+          "default_root_dir": "saved/",
+          "devices": 2,
+          "max_epochs": 1000,
+          "min_epochs": 1
         }
     }
 }

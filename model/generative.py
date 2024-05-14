@@ -3,6 +3,7 @@ from denoising_diffusion_pytorch import Unet
 import functools
 import math
 import networkx as nx
+import numpy as np
 import pyro
 import pyro.distributions as dist
 import pyro.nn as pnn
@@ -50,7 +51,8 @@ class DigitFeatures(MarkovKernel):
         return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
 
 class DigitsDecoder(MarkovKernel):
-    def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10):
+    def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10,
+                 mnist_mean=None):
         super().__init__()
         self.batch_shape = ()
         self._digit_side = digit_side
@@ -58,10 +60,17 @@ class DigitsDecoder(MarkovKernel):
         self.decoder = nn.Sequential(
             nn.Linear(z_what_dim, hidden_dim // 2), nn.ReLU(),
             nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
+            nn.Linear(hidden_dim, digit_side ** 2, bias=False)
         )
         scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
         self.register_buffer('scale', scale)
+        self.log_scale = nn.Parameter(torch.tensor(0.))
+
+        mean_digit = torch.from_numpy(np.load(mnist_mean)) if mnist_mean else\
+                     torch.zeros(digit_side, digit_side)
+        self.register_buffer("digits_mean",
+                             mean_digit.to(dtype=torch.float).flatten())
+
         self.translate = (x_side - digit_side) / digit_side
         self._digits = {}
 
@@ -79,7 +88,7 @@ class DigitsDecoder(MarkovKernel):
         digits = digits.view(P*B*K, self._digit_side, self._digit_side)
         frames = F.grid_sample(digits.unsqueeze(1), grid, mode='nearest',
                                align_corners=True).squeeze(1)
-        return frames.view(P, B, K, self._x_side, self._x_side)
+        return frames.view(P, B, K, self._x_side, self._x_side).sum(-3)
 
     @property
     def event_dim(self):
@@ -88,10 +97,12 @@ class DigitsDecoder(MarkovKernel):
     def forward(self, what, where) -> dist.Distribution:
         P, B, K, _ = where.shape
         if what not in self._digits:
-            self._digits = {what: self.decoder(what)}
+            self._digits = {
+                what: F.sigmoid(self.decoder(what) + self.digits_mean)
+            }
         digits = self._digits[what]
-        frame = torch.clamp(self.blit(digits, where).sum(-3), 0., 1.)
-        return dist.ContinuousBernoulli(frame).to_event(2)
+        frame = self.blit(digits, where)
+        return dist.Normal(frame, self.log_scale.exp()).to_event(2)
 
 class DigitDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
@@ -151,11 +162,9 @@ class ConditionalGaussian(MarkovKernel):
         return 1
 
     def forward(self, hs: torch.Tensor) -> dist.Distribution:
-        P, B, _ = hs.shape
-
-        cov = self.covariance.expand(P, B, *self.covariance.shape)
-        return dist.MultivariateNormal(self.decoder(hs),
-                                       scale_tril=torch.tril(self.covariance))
+        scale = torch.tril(self.covariance).expand(*self.batch_shape,
+                                                   *self.covariance.shape)
+        return dist.MultivariateNormal(self.decoder(hs), scale_tril=scale)
 
 class MlpBernoulliLikelihood(MarkovKernel):
     def __init__(self, in_dim, out_shape, nonlinearity=nn.ReLU):
@@ -198,7 +207,6 @@ class DiffusionStep(MarkovKernel):
         super().__init__()
         self.batch_shape = ()
         self.register_buffer('betas', betas.to(dtype=torch.float))
-        self.clips = clip_lims
 
         if thick:
             self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
@@ -234,7 +242,8 @@ class ConvolutionalDecoder(MarkovKernel):
             (nn.ConvTranspose2d(32, 32, 3, 1, 0) if img_side == 28 else
              nn.ConvTranspose2d(32, 32, 3, 1, 1)),
             nn.SiLU(),
-            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 128 else nn.ConvTranspose2d(32, channels, 4, 2, 1),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 128 else\
+            nn.ConvTranspose2d(32, channels, 4, 2, 1),
             nn.SiLU() if img_side == 128 else nn.Identity(),
             nn.ConvTranspose2d(32, channels, 4, 2, 1) if img_side == 128 else nn.Identity(),
         )
@@ -251,7 +260,7 @@ class ConvolutionalDecoder(MarkovKernel):
         loc = self.convs(hs).view(P, B, self._channels, self._img_side,
                                   self._img_side)
         scale = self.log_scale.exp().expand(P, B, *self.log_scale.shape)
-        return dist.Normal(F.sigmoid(loc), scale).to_event(3)
+        return dist.Normal(loc, scale).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def __init__(self):
@@ -282,11 +291,13 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
             kwargs.pop(k)
         return super().forward(*args, **kwargs)
 
-    def generate(self, **kwargs):
+    def model(self, **kwargs):
         results = ()
 
         for site, kernel in self.sweep():
             density = kernel(*self.parent_vals(site))
+            if site in kwargs:
+                self.clamp(site, kwargs[site])
             if self.nodes[site]['is_observed']:
                 obs = self.nodes[site]['value']
             else:

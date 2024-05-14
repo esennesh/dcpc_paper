@@ -64,24 +64,23 @@ class ParticleDict(nn.ParameterDict):
     def num_particles(self):
         return self._num_particles
 
-    def get_particles(self, key: str, idx: Sequence[int]) -> torch.Tensor:
+    def get_particles(self, key: str, idx: torch.LongTensor) -> torch.Tensor:
         val = self[key]
         assert val.shape[self._batch_dim] == self.num_data
         assert val.shape[self._particle_dim] == self.num_particles
-        return torch.index_select(val, self._batch_dim,
-                                  torch.LongTensor(idx).to(val.device))
+        val = torch.index_select(val, self._batch_dim, idx.to(val.device))
+        return val.to(idx.device)
 
-    def set_particles(self, key: str, idx: Sequence[int], val: torch.Tensor):
+    def set_particles(self, key: str, idx: torch.LongTensor, val: torch.Tensor):
         assert val.shape[self._particle_dim] == self.num_particles
         if key not in self:
             shape = list(val.shape)
             shape[self._batch_dim] = self.num_data
             self[key] = torch.zeros(*shape)
         with torch.no_grad():
-            indices = torch.LongTensor(idx).view(
-                (1,) * self._batch_dim + (len(idx),) +\
-                (1,) * len(val.shape[self._batch_dim+1:])
-            ).to(self[key].device)
+            indices = idx.view((1,) * self._batch_dim + (len(idx),) +\
+                               (1,) * len(val.shape[self._batch_dim+1:]))
+            indices = indices.to(self[key].device)
             self[key].scatter_(self._batch_dim, indices.expand(val.shape),
                                val.to(self[key].device))
 
@@ -129,9 +128,11 @@ class PpcGraphicalModel(GraphicalModel):
 
         return dist.Delta(z_next, log_cc - log_Zcc, event_dim=event_dim)
 
-    def guide(self, lr=1e-3):
+    def guide(self, lr=1e-3, **kwargs):
         results = ()
         for site, kernel in self.sweep(forward=False):
+            if site in kwargs:
+                self.clamp(site, kwargs[site])
             if not self.nodes[site]["is_observed"]:
                 posterior = self.get_posterior(site, kernel.func.event_dim,
                                                lr=lr)

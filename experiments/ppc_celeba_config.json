@@ -1,54 +1,49 @@
 {
     "name": "CelebA_Ppc",
-    "n_gpu": 1,
 
     "arch": {
         "type": "CelebAPpc",
+        "args": {}
+    },
+    "checkpoint": {
+        "type": "ModelCheckpoint",
         "args": {
-          "img_side": 128
+            "auto_insert_metric_name": false,
+            "every_n_epochs": 5,
+            "filename": "checkpoint_{epoch}",
+            "mode": "min",
+            "monitor": "valid/loss"
         }
     },
-    "data_loader": {
-        "type": "CelebADataLoader",
+    "data_module": {
+        "type": "CelebADataModule",
         "args":{
             "data_dir": "data/",
-            "drop_last": false,
-            "shuffle": true,
-            "batch_size": 2048,
-            "validation_split": 0.1,
-            "num_workers": 2,
-            "img_side": 128
+            "batch_size": 2048
         }
     },
-    "optimizer": {
-        "type": "Adam",
+    "lmodule": {
+        "type": "LightningPpc",
         "args": {
-            "optim_args": {
-                "lr": 8e-4,
-                "weight_decay": 0,
-                "amsgrad": true
-            }
+            "cooldown": 10,
+            "factor": 0.9,
+            "lr": 8e-4,
+            "num_particles": 4,
+            "num_sweeps": 300,
+            "patience": 50
         }
     },
-    "lr_scheduler": {
-        "type": "ReduceLROnPlateau",
-        "args": {
-          "patience": 50,
-          "cooldown": 10,
-          "factor": 0.9
-        }
+    "logger": {
+        "type": "TensorBoardLogger",
+        "args": {}
     },
-    "metrics": ["ess", "log_marginal"],
     "trainer": {
-        "epochs": 250,
-        "monitor": "min val_loss",
-        "save_dir": "saved/",
-        "save_period": 10,
-        "tensorboard": true,
-        "verbosity": 2,
-        "type": "PpcTrainer",
+        "type": "Trainer",
         "args": {
-            "num_particles": 2
+          "default_root_dir": "saved/",
+          "devices": 2,
+          "max_epochs": 15,
+          "min_epochs": 1
         }
     }
 }
