@@ -4,9 +4,10 @@
     "arch": {
         "type": "DiffusionPpc",
         "args": {
-            "flash_attn": false,
+            "flash_attn": true,
+            "hidden_dim": 32,
             "T": 100,
-            "thick": false
+            "unet": false
         }
     },
     "checkpoint": {
@@ -23,7 +24,7 @@
         "type": "Flowers102DataModule",
         "args":{
             "data_dir": "data/",
-            "batch_size": 16,
+            "batch_size": 50,
             "side": 64
         }
     },
@@ -35,6 +36,7 @@
             "lr": 1e-6,
             "num_particles": 2,
             "num_sweeps": 1,
+            "online": true,
             "patience": 100
         }
     },
@@ -46,7 +48,7 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": 2,
+          "devices": -1,
           "max_epochs": 1000,
           "min_epochs": 1
         }
