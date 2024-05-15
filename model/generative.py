@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from denoising_diffusion_pytorch import Unet
+from denoising_diffusion_pytorch.simple_diffusion import UViT
 import functools
 import math
 import networkx as nx
@@ -212,8 +212,8 @@ class DiffusionStep(MarkovKernel):
         self.register_buffer('alpha_bars', torch.cumprod(self.alphas, dim=0))
 
         if thick:
-            self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
-                             flash_attn=flash_attn)
+            self.unet = UViT(x_side, out_dim=3, channels=3,
+                             dim_mults=dim_mults)
         else:
             self.unet = ScoreNetwork0(x_side)
 
