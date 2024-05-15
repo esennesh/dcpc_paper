@@ -14,7 +14,7 @@ class ScoreNetwork0(torch.nn.Module):
         super().__init__()
         self._x_side = x_side
         nch = 3
-        chs = [32, 64, 128, 256, 256]
+        chs = [32, 64, 128, 256, 512]
         self._convs = torch.nn.ModuleList([
             torch.nn.Sequential(
                 torch.nn.Conv2d(nch+1, chs[0], kernel_size=3, padding=1),  # (batch, ch, x_side, x_side)
@@ -41,6 +41,10 @@ class ScoreNetwork0(torch.nn.Module):
                 torch.nn.LogSigmoid(),  # (batch, 64, 2, 2)
             ),
         ])
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(chs[4] * 16, chs[4] * 16), torch.nn.SiLU(),
+            torch.nn.Linear(chs[4] * 16, chs[4] * 16)
+        )
         self._tconvs = torch.nn.ModuleList([
             torch.nn.Sequential(
                 # input is the output of convs[4]
@@ -81,7 +85,7 @@ class ScoreNetwork0(torch.nn.Module):
             signal = conv(signal)
             if i < len(self._convs) - 1:
                 signals.append(signal)
-
+        signal = self.mlp(signal.view(signal.shape[0], -1)).view(*signal.shape)
         for i, tconv in enumerate(self._tconvs):
             if i == 0:
                 signal = tconv(signal)
