@@ -64,7 +64,6 @@ class DigitsDecoder(MarkovKernel):
         )
         scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
         self.register_buffer('scale', scale)
-        self.log_scale = nn.Parameter(torch.tensor(0.))
 
         mean_digit = torch.from_numpy(np.load(mnist_mean)) if mnist_mean else\
                      torch.zeros(digit_side, digit_side)
@@ -101,8 +100,7 @@ class DigitsDecoder(MarkovKernel):
                 what: F.sigmoid(self.decoder(what) + self.digits_mean)
             }
         digits = self._digits[what]
-        frame = self.blit(digits, where)
-        return dist.Normal(frame, self.log_scale.exp()).to_event(2)
+        return dist.Normal(self.blit(digits, where), 1.).to_event(2)
 
 class DigitDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
