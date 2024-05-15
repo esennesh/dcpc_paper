@@ -141,16 +141,16 @@ class BouncingMnistPpc(PpcGraphicalModel):
         return super().forward(**clamps, B=B, **kwargs)
 
 class DiffusionPpc(PpcGraphicalModel):
-    def __init__(self, dims, hidden_dims=[64, 128, 256, 512], thick=True,
-                 flash_attn=True, T=100, channels=3):
+    def __init__(self, dims, eta=1e-1, dim_mults=(1, 2, 4, 8), thick=True,
+                 flash_attn=True, hidden_dim=64, T=100):
         super().__init__()
         self._channels = dims[0]
         self._num_times = T
 
-        self.diffusion = DiffusionStep(sigmoid_beta_schedule(T),
-                                       channels=channels,
-                                       hidden_dims=hidden_dims,
+        self.diffusion = DiffusionStep(eta, sigmoid_beta_schedule(T),
+                                       dim_mults=dim_mults,
                                        flash_attn=flash_attn,
+                                       hidden_dim=hidden_dim,
                                        thick=thick, x_side=dims[-1])
         self.prior = DiffusionPrior(dims[0], dims[-1])
 
