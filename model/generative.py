@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from denoising_diffusion_pytorch import Unet
 import functools
 import math
 import networkx as nx
@@ -201,15 +202,16 @@ class DiffusionPrior(MarkovKernel):
         return dist.Normal(loc, scale).to_event(3)
 
 class DiffusionStep(MarkovKernel):
-    def __init__(self, betas, x_side=128, thick=True, channels=3,
-                 hidden_dims=[64, 128, 256, 512], flash_attn=True):
+    def __init__(self, eta, betas, x_side=128, thick=True,
+                 dim_mults=(1, 2, 4, 8), flash_attn=True, hidden_dim=64):
         super().__init__()
         self.batch_shape = ()
+        self.eta = eta
         self.register_buffer('betas', betas.to(dtype=torch.float))
 
         if thick:
-            self.unet = UNet(channels, hidden_dims=hidden_dims,
-                             image_size=x_side, use_flash_attn=flash_attn)
+            self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
+                             flash_attn=flash_attn)
         else:
             self.unet = ScoreNetwork0(x_side)
 
