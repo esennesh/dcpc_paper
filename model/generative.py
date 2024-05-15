@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-from denoising_diffusion_pytorch import Unet
 import functools
 import math
 import networkx as nx
@@ -12,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, ImportanceModel, MarkovKernel
 from base import MarkovKernelApplication
+from .thirdparty.simple_diffusion.simple_diffusion.model.unet import UNet
 from utils import ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
@@ -201,16 +201,15 @@ class DiffusionPrior(MarkovKernel):
         return dist.Normal(loc, scale).to_event(3)
 
 class DiffusionStep(MarkovKernel):
-    def __init__(self, eta, betas, x_side=128, thick=True,
-                 dim_mults=(1, 2, 4, 8), flash_attn=True, hidden_dim=64):
+    def __init__(self, betas, x_side=128, thick=True, channels=3,
+                 hidden_dims=[64, 128, 256, 512], flash_attn=True):
         super().__init__()
         self.batch_shape = ()
-        self.eta = eta
         self.register_buffer('betas', betas.to(dtype=torch.float))
 
         if thick:
-            self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
-                             flash_attn=flash_attn)
+            self.unet = UNet(channels, hidden_dims=hidden_dims,
+                             image_size=x_side, use_flash_attn=flash_attn)
         else:
             self.unet = ScoreNetwork0(x_side)
 
@@ -223,9 +222,9 @@ class DiffusionStep(MarkovKernel):
         xs_prev = F.tanh(xs_prev)
         score = self.unet(xs_prev.view(P*B, C, W, H),
                           torch.tensor(t, device=xs_prev.device,
-                                       dtype=torch.long).repeat(P*B))
-        return dist.Normal(xs_prev + self.eta * score.view(*xs_prev.shape),
-                           2 * self.eta * self.betas[t]).to_event(3)
+                                       dtype=torch.long).repeat(P*B))["sample"]
+        return dist.Normal(xs_prev + score.view(*xs_prev.shape),
+                           math.sqrt(2 * self.betas[t])).to_event(3)
 
 class ConvolutionalDecoder(MarkovKernel):
     def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
