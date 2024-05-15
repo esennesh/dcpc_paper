@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from denoising_diffusion_pytorch import Unet
 from denoising_diffusion_pytorch.simple_diffusion import UViT
 import functools
 import math
@@ -202,16 +203,18 @@ class DiffusionPrior(MarkovKernel):
         return dist.Normal(loc, scale).to_event(3)
 
 class DiffusionStep(MarkovKernel):
-    def __init__(self, eta, betas, x_side=128, thick=True,
-                 dim_mults=(1, 2, 4, 8), flash_attn=True, hidden_dim=64):
+    def __init__(self, betas, x_side=128, unet="Unet", dim_mults=(1, 2, 4, 8),
+                 flash_attn=True, hidden_dim=64):
         super().__init__()
         self.batch_shape = ()
-        self.eta = eta
         self.register_buffer('betas', betas.to(dtype=torch.float))
         self.register_buffer('alphas', 1. - self.betas)
         self.register_buffer('alpha_bars', torch.cumprod(self.alphas, dim=0))
 
-        if thick:
+        if unet == "Unet":
+            self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
+                             flash_attn=flash_attn)
+        elif unet == "UViT":
             self.unet = UViT(x_side, out_dim=3, channels=3,
                              dim_mults=dim_mults)
         else:
