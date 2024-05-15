@@ -6,6 +6,7 @@ import pandas as pd
 from pathlib import Path
 import pyro
 import torch
+import torch.nn.functional as F
 
 class ScoreNetwork0(torch.nn.Module):
     # takes an input image and time, returns the score function
@@ -89,6 +90,10 @@ class ScoreNetwork0(torch.nn.Module):
         signal = signal.reshape(*x2.shape)  # (..., 1 * 28 * 28)
         return signal
 
+def soft_clamp(z, low, high):
+    z = torch.where(z > high, high - F.softplus(high - z), z)
+    z = torch.where(z < low, low + F.softplus(z - low), z)
+    return z
 
 def log_likelihood(trace):
     return sum(site['log_prob'] for site in trace.nodes.values()
