@@ -208,6 +208,8 @@ class DiffusionStep(MarkovKernel):
         self.batch_shape = ()
         self.eta = eta
         self.register_buffer('betas', betas.to(dtype=torch.float))
+        self.register_buffer('alphas', 1. - self.betas)
+        self.register_buffer('alpha_bars', torch.cumprod(self.alphas, dim=0))
 
         if thick:
             self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
@@ -221,12 +223,15 @@ class DiffusionStep(MarkovKernel):
 
     def forward(self, xs_prev: torch.Tensor, t=0) -> dist.Distribution:
         P, B, C, W, H = xs_prev.shape
-        xs_prev = F.tanh(xs_prev)
         score = self.unet(xs_prev.view(P*B, C, W, H),
                           torch.tensor(t, device=xs_prev.device,
                                        dtype=torch.long).repeat(P*B))["sample"]
-        return dist.Normal(xs_prev + score.view(*xs_prev.shape),
-                           math.sqrt(2 * self.betas[t])).to_event(3)
+        score = score.view(*xs_prev.shape)
+        beta = self.betas[t]
+        alpha, alpha_bar = self.alphas[t], self.alpha_bars[t]
+        loc = 1/alpha.sqrt() * (xs_prev -
+                                (beta / (1. - alpha_bar).sqrt()) * score)
+        return dist.Normal(loc, beta).to_event(3)
 
 class ConvolutionalDecoder(MarkovKernel):
     def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
