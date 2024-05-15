@@ -96,6 +96,7 @@ class MnistDataModule(L.LightningDataModule):
 class EMnistDataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size):
         super().__init__()
+        self.batch_size = batch_size
         self.data_dir = data_dir
         self.transform = transforms.ToTensor()
         self.dims = (1, 28, 28)
@@ -108,24 +109,27 @@ class EMnistDataModule(L.LightningDataModule):
         if stage == "fit" or stage is None:
             emnist_full = datasets.EMNIST(self.data_dir, split="balanced",
                                           train=True, transform=self.transform)
-            self.emnist_train, self.emnist_val = random_split(
-                emnist_full, [0.9 * len(emnist_full), 0.1 * len(emnist_full)]
-            )
+            num_validation = int(0.1 * len(emnist_full))
+            num_training = len(emnist_full) - num_validation
+            self.emnist_train, self.emnist_val = random_split(emnist_full,
+                                                              [num_training,
+                                                              num_validation])
 
         if stage == "test" or stage is None:
             self.emnist_test = EMNIST(self.data_dir, split="balanced",
                                       train=False, transform=self.transform)
 
     def test_dataloader(self):
-        return DataLoader(IndexedDataset(self.emnist_test),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.emnist_test), num_workers=2,
+                          batch_size=self.batch_size)
 
     def train_dataloader(self):
-        return DataLoader(IndexedDataset(self.emnist_train),
-                          batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.emnist_train), num_workers=2,
+                          batch_size=self.batch_size)
 
     def val_dataloader(self):
-        return DataLoader(IndexedDataset(self.emnist_val), batch_size=BATCH_SIZE)
+        return DataLoader(IndexedDataset(self.emnist_val), num_workers=2,
+                          batch_size=self.batch_size)
 
 class FashionMnistDataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size):
