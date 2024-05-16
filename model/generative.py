@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, ImportanceModel, MarkovKernel
 from base import MarkovKernelApplication
-from utils import ScoreNetwork0
+from utils import ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
     def __init__(self, num_digits=3, z_where_dim=2):
@@ -60,7 +60,7 @@ class DigitsDecoder(MarkovKernel):
         self.decoder = nn.Sequential(
             nn.Linear(z_what_dim, hidden_dim // 2), nn.ReLU(),
             nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, digit_side ** 2, bias=False)
+            nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
         )
         scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
         self.register_buffer('scale', scale)
@@ -76,7 +76,7 @@ class DigitsDecoder(MarkovKernel):
     def blit(self, digits, z_where):
         P, B, K, _ = z_where.shape
         affine_p1 = self.scale.repeat(P, B, K, 1, 1)
-        affine_p2 = torch.clamp(z_where.unsqueeze(-1) * self.translate, -1, 1)
+        affine_p2 = soft_clamp(z_where.unsqueeze(-1) * self.translate, -1, 1)
         affine_p2[:, :, :, 0, :] = -affine_p2[:, :, :, 0, :]
         grid = F.affine_grid(
             torch.cat((affine_p1, affine_p2), -1).view(P*B*K, 2, 3),
@@ -87,7 +87,7 @@ class DigitsDecoder(MarkovKernel):
         digits = digits.view(P*B*K, self._digit_side, self._digit_side)
         frames = F.grid_sample(digits.unsqueeze(1), grid, mode='nearest',
                                align_corners=True).squeeze(1)
-        return frames.view(P, B, K, self._x_side, self._x_side).sum(-3)
+        return frames.view(P, B, K, self._x_side, self._x_side)
 
     @property
     def event_dim(self):
@@ -97,10 +97,11 @@ class DigitsDecoder(MarkovKernel):
         P, B, K, _ = where.shape
         if what not in self._digits:
             self._digits = {
-                what: F.sigmoid(self.decoder(what) + self.digits_mean)
+                what: self.decoder(what)
             }
         digits = self._digits[what]
-        return dist.Normal(self.blit(digits, where), 1.).to_event(2)
+        frames = soft_clamp(self.blit(digits, where).sum(dim=-3), 0., 1.)
+        return dist.ContinuousBernoulli(frames).to_event(2)
 
 class DigitDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
