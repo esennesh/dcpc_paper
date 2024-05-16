@@ -131,7 +131,7 @@ class PpcGraphicalModel(GraphicalModel):
     def guide(self, lr=1e-3, **kwargs):
         results = ()
         for site, kernel in self.sweep(forward=False):
-            if site in kwargs:
+            if site in kwargs and kwargs[site] is not None:
                 self.clamp(site, kwargs[site])
             if not self.nodes[site]["is_observed"]:
                 posterior = self.get_posterior(site, kernel.func.event_dim,
