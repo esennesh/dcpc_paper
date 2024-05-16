@@ -141,7 +141,7 @@ class BouncingMnistPpc(PpcGraphicalModel):
         return super().forward(**clamps, B=B, **kwargs)
 
 class DiffusionPpc(PpcGraphicalModel):
-    def __init__(self, dims, dim_mults=(1, 2, 4, 8), thick=True,
+    def __init__(self, dims, dim_mults=(1, 2, 4, 8), unet="Unet",
                  flash_attn=True, hidden_dim=64, T=100):
         super().__init__()
         self._channels = dims[0]
@@ -151,7 +151,7 @@ class DiffusionPpc(PpcGraphicalModel):
                                        dim_mults=dim_mults,
                                        flash_attn=flash_attn,
                                        hidden_dim=hidden_dim,
-                                       thick=thick, x_side=dims[-1])
+                                       unet=unet, x_side=dims[-1])
         self.prior = DiffusionPrior(dims[0], dims[-1])
 
         self.add_node("X__%d" % T, [], MarkovKernelApplication("prior", (),

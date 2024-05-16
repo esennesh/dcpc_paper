@@ -33,9 +33,9 @@ def systematic_resample(log_weights):
     (normalizers, _) = torch.max(input=cumsums, dim=1, keepdim=True)
     cumsums = cumsums / normalizers ## B * S
 
-    index = torch.searchsorted(cumsums, positions)
-    assert index.shape == (B, P), "ERROR! systematic resampling resulted unexpected index shape."
-    return index.transpose(0, 1)
+    index = torch.searchsorted(cumsums, positions).transpose(0, 1)
+    assert index.shape == (P, B), "ERROR! systematic resampling resulted unexpected index shape."
+    return torch.where(index >= P - 1, torch.zeros_like(index), index)
 
 def _resample(log_weights, estimate_normalizer=False):
     indices = systematic_resample(log_weights)

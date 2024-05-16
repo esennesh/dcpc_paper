@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from denoising_diffusion_pytorch import Unet
+from denoising_diffusion_pytorch.simple_diffusion import UViT
 import functools
 import math
 import networkx as nx
@@ -12,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, ImportanceModel, MarkovKernel
 from base import MarkovKernelApplication
+from .thirdparty.simple_diffusion.simple_diffusion.model.unet import UNet
 from utils import ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
@@ -201,15 +203,20 @@ class DiffusionPrior(MarkovKernel):
         return dist.Normal(loc, scale).to_event(3)
 
 class DiffusionStep(MarkovKernel):
-    def __init__(self, betas, x_side=128, thick=True,
-                 dim_mults=(1, 2, 4, 8), flash_attn=True, hidden_dim=64):
+    def __init__(self, betas, x_side=128, unet="Unet", dim_mults=(1, 2, 4, 8),
+                 flash_attn=True, hidden_dim=64):
         super().__init__()
         self.batch_shape = ()
         self.register_buffer('betas', betas.to(dtype=torch.float))
+        self.register_buffer('alphas', 1. - self.betas)
+        self.register_buffer('alpha_bars', torch.cumprod(self.alphas, dim=0))
 
-        if thick:
+        if unet == "Unet":
             self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
                              flash_attn=flash_attn)
+        elif unet == "UViT":
+            self.unet = UViT(x_side, out_dim=3, channels=3,
+                             dim_mults=dim_mults)
         else:
             self.unet = ScoreNetwork0(x_side)
 
@@ -219,11 +226,15 @@ class DiffusionStep(MarkovKernel):
 
     def forward(self, xs_prev: torch.Tensor, t=0) -> dist.Distribution:
         P, B, C, W, H = xs_prev.shape
-        loc = self.unet(xs_prev.view(P*B, C, W, H),
-                        torch.tensor(t, device=xs_prev.device,
-                                     dtype=torch.long).repeat(P*B))
-        return dist.Normal(F.tanh(loc.view(*xs_prev.shape)),
-                           self.betas[t]).to_event(3)
+        score = self.unet(xs_prev.view(P*B, C, W, H),
+                          torch.tensor(t, device=xs_prev.device,
+                                       dtype=torch.long).repeat(P*B))["sample"]
+        score = score.view(*xs_prev.shape)
+        beta = self.betas[t]
+        alpha, alpha_bar = self.alphas[t], self.alpha_bars[t]
+        loc = 1/alpha.sqrt() * (xs_prev -
+                                (beta / (1. - alpha_bar).sqrt()) * score)
+        return dist.Normal(loc, beta).to_event(3)
 
 class ConvolutionalDecoder(MarkovKernel):
     def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
