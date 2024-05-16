@@ -99,13 +99,17 @@ class LightningPpc(L.LightningModule):
     def _load_particles(self, indices, train=True):
         particles = self.particles["train" if train else "valid"]
         for site in particles:
-            self.graph.update(site, particles.get_particles(site, indices))
+            particle_vals = particles.get_particles(site, indices)
+            if self.device != particle_vals.device:
+                particle_vals = particle_vals.to(self.device)
+            self.graph.update(site, particle_vals)
 
     def _save_particles(self, indices, train=True):
         particles = self.particles["train" if train else "valid"]
         for site in self.graph.stochastic_nodes:
+            particle_vals = self.graph.nodes[site]['value'].detach()
             particles.set_particles(site, indices,
-                                    self.graph.nodes[site]['value'].detach())
+                                    particle_vals.to(device='cpu'))
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.graph.parameters(), amsgrad=True,
