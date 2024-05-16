@@ -275,6 +275,7 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
         return self._graph.successors(site)
 
     def clamp(self, site, value):
+        assert value is not None
         self.nodes[site]['is_observed'] = True
         return self.update(site, value)
 
@@ -282,19 +283,12 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
         for site in self.nodes:
             self.unclamp(site)
 
-    def forward(self, *args, **kwargs):
-        clamps = {k: v for k, v in kwargs.items() if k in self.nodes}
-        for k, v in clamps.items():
-            self.clamp(k, v)
-            kwargs.pop(k)
-        return super().forward(*args, **kwargs)
-
     def model(self, **kwargs):
         results = ()
 
         for site, kernel in self.sweep():
             density = kernel(*self.parent_vals(site))
-            if site in kwargs:
+            if site in kwargs and kwargs[site] is not None:
                 self.clamp(site, kwargs[site])
             if self.nodes[site]['is_observed']:
                 obs = self.nodes[site]['value']
