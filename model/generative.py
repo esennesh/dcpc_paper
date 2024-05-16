@@ -245,7 +245,6 @@ class ConvolutionalDecoder(MarkovKernel):
             nn.SiLU() if img_side == 128 else nn.Identity(),
             nn.ConvTranspose2d(32, channels, 4, 2, 1) if img_side == 128 else nn.Identity(),
         )
-        self.log_scale = nn.Parameter(torch.zeros(channels, img_side, img_side))
 
     @property
     def event_dim(self):
@@ -257,8 +256,7 @@ class ConvolutionalDecoder(MarkovKernel):
         hs = hs.view(P*B, *hs.shape[2:], 1, 1)
         loc = self.convs(hs).view(P, B, self._channels, self._img_side,
                                   self._img_side)
-        scale = self.log_scale.exp().expand(P, B, *self.log_scale.shape)
-        return dist.Normal(loc, scale).to_event(3)
+        return dist.Normal(loc, 1.).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def __init__(self):
@@ -275,6 +273,7 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
         return self._graph.successors(site)
 
     def clamp(self, site, value):
+        assert value is not None
         self.nodes[site]['is_observed'] = True
         return self.update(site, value)
 
@@ -282,19 +281,12 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
         for site in self.nodes:
             self.unclamp(site)
 
-    def forward(self, *args, **kwargs):
-        clamps = {k: v for k, v in kwargs.items() if k in self.nodes}
-        for k, v in clamps.items():
-            self.clamp(k, v)
-            kwargs.pop(k)
-        return super().forward(*args, **kwargs)
-
     def model(self, **kwargs):
         results = ()
 
         for site, kernel in self.sweep():
             density = kernel(*self.parent_vals(site))
-            if site in kwargs:
+            if site in kwargs and kwargs[site] is not None:
                 self.clamp(site, kwargs[site])
             if self.nodes[site]['is_observed']:
                 obs = self.nodes[site]['value']
