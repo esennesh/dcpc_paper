@@ -60,7 +60,7 @@ class DigitsDecoder(MarkovKernel):
         self.decoder = nn.Sequential(
             nn.Linear(z_what_dim, hidden_dim // 2), nn.ReLU(),
             nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, digit_side ** 2)
+            nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
         )
         scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
         self.register_buffer('scale', scale)
@@ -97,7 +97,7 @@ class DigitsDecoder(MarkovKernel):
         P, B, K, _ = where.shape
         if what not in self._digits:
             self._digits = {
-                what: F.sigmoid(self.decoder(what) + self.digits_mean)
+                what: self.decoder(what)
             }
         digits = self._digits[what]
         frames = soft_clamp(self.blit(digits, where).sum(dim=-3), 0., 1.)
