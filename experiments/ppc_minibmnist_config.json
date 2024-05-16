@@ -21,7 +21,7 @@
         "type": "MiniBouncingMnistDataModule",
         "args": {
             "data_dir": "data/",
-            "batch_size": 192
+            "batch_size": 64
         }
     },
     "lmodule": {
@@ -29,9 +29,9 @@
         "args": {
             "cooldown": 50,
             "factor": 0.9,
-            "lr": 0.001,
+            "lr": 0.01,
             "num_particles": 10,
-            "num_sweeps": 5,
+            "num_sweeps": 1,
             "patience": 100
         }
     },
