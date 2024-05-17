@@ -30,7 +30,8 @@ def setup(config):
 
     # build Lightning trainer
     checkpoint = config.init_obj("checkpoint", lightning.pytorch.callbacks,
-                                 dirpath=config.save_dir)
+                                 dirpath=config.save_dir, save_top_k=-1,
+                                 save_last=True)
     trainer = config.init_obj("trainer", lightning.pytorch,
                               callbacks=[checkpoint], logger=logger,
                               log_every_n_steps=1)
