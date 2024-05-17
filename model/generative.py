@@ -13,7 +13,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, ImportanceModel, MarkovKernel
 from base import MarkovKernelApplication
-from .thirdparty.simple_diffusion.simple_diffusion.model.unet import UNet
 from utils import ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
