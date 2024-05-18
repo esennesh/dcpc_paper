@@ -36,13 +36,15 @@ class BaseModel(pyro.nn.PyroModule):
         self.load_state_dict(checkpoint['state_dict'])
 
 class ImportanceModel(BaseModel):
-    def forward(self, *args, B=1, prior=False, P=1, **kwargs):
+    def forward(self, *args, B=1, mode=None, P=1, **kwargs):
         for child in self.children():
             if hasattr(child, "batch_shape"):
                 child.batch_shape = (B,)
         with pyro.plate_stack("importance", (P, B)):
-            if prior:
+            if mode == "prior":
                 return self.model(*args, **kwargs)
+            else:
+                kwargs["mode"] = mode
             return utils.importance(self.model, self.guide, *args, **kwargs)
 
     @abstractmethod
