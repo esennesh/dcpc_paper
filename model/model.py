@@ -91,17 +91,8 @@ class MnistPpc(PpcGraphicalModel):
         self.add_node("X", ["z3"], MarkovKernelApplication("likelihood", (),
                                                            {}))
 
-    def forward(self, xs=None, **kwargs):
-        if 'B' in kwargs:
-            B = kwargs.pop('B')
-        elif xs is not None:
-            B = xs.shape[0]
-        else:
-            B = 1
-        self.prior.batch_shape = (B,)
-        self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
-        self.likelihood.batch_shape = (B,)
-        return super().forward(X=xs, B=B, **kwargs)
+    def conditioner(self, data):
+        return {"X": data}
 
 class BouncingMnistPpc(PpcGraphicalModel):
     def __init__(self, dims, digit_side=28, hidden_dim=400, num_digits=3,
@@ -130,15 +121,9 @@ class BouncingMnistPpc(PpcGraphicalModel):
             self.add_node("X__%d" % t, ["z_what", "z_where__%d" % t],
                           MarkovKernelApplication("decoder", (), {}))
 
-    def forward(self, xs=None, **kwargs):
-        B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
-        if B == 1 and 'B' in kwargs:
-            B = kwargs.pop('B')
-        self.decoder.batch_shape = (B,)
-        self.digit_features.batch_shape = (B,)
-        self.digit_positions.batch_shape = (B,)
-        clamps = {"X__%d" % t: xs[:, t] for t in range(T) if xs is not None}
-        return super().forward(**clamps, B=B, **kwargs)
+    def conditioner(self, xs):
+        T = xs.shape[1]
+        return {"X__%d" % t: xs[:, t] for t in range(T)}
 
 class DiffusionPpc(PpcGraphicalModel):
     def __init__(self, dims, dim_mults=(1, 2, 4, 8), unet="Unet",
@@ -160,13 +145,8 @@ class DiffusionPpc(PpcGraphicalModel):
             step_kernel = MarkovKernelApplication("diffusion", (), {"t": t})
             self.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
 
-    def forward(self, xs=None, **kwargs):
-        B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
-        if B == 1 and 'B' in kwargs:
-            B = kwargs.pop('B')
-        self.diffusion.batch_shape = (B,)
-        self.prior.batch_shape = (B,)
-        return super().forward(X__0=xs, B=B, **kwargs)
+    def conditioner(self, data):
+        return {"X__0": data}
 
 class CelebAPpc(PpcGraphicalModel):
     def __init__(self, dims, z_dim=40, hidden_dim=256):
@@ -181,10 +161,5 @@ class CelebAPpc(PpcGraphicalModel):
         self.add_node("X", ["z"], MarkovKernelApplication("likelihood", (),
                                                           {}))
 
-    def forward(self, xs=None, **kwargs):
-        B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
-        if B == 1 and 'B' in kwargs:
-            B = kwargs.pop('B')
-        self.prior.batch_shape = (B,)
-        self.likelihood.batch_shape = (B,)
-        return super().forward(X=xs, B=B, **kwargs)
+    def conditioner(self, data):
+        return {"X": data}
