@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from contextlib import contextmanager
 from denoising_diffusion_pytorch import Unet
 from denoising_diffusion_pytorch.simple_diffusion import UViT
@@ -292,17 +293,28 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
         for site in self.nodes:
             self.unclamp(site)
 
+    @contextmanager
+    def condition(self, **kwargs):
+        kwargs = {k: v for (k, v) in kwargs.items() if torch.is_tensor(v)}
+        try:
+            for k, v in kwargs.items():
+                self.clamp(k, v)
+            yield self
+        finally:
+            for k in kwargs:
+                self.unclamp(k)
+
+    @abstractmethod
+    def conditioner(self, data):
+        raise NotImplementedError
+
     def model(self, **kwargs):
         results = ()
 
         for site, kernel in self.sweep():
             density = kernel(*self.parent_vals(site))
-            if site in kwargs and kwargs[site] is not None:
-                self.clamp(site, kwargs[site])
-            if self.nodes[site]['is_observed']:
-                obs = self.nodes[site]['value']
-            else:
-                obs = None
+            obs = self.nodes[site]['value'] if self.nodes[site]['is_observed']\
+                  else None
             self.update(site, pyro.sample(site, density, obs=obs).detach())
 
             if len(list(self.child_sites(site))) == 0:
@@ -354,14 +366,3 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def update(self, site, value):
         self.nodes[site]['value'] = value
         return self.nodes[site]['value']
-
-@contextmanager
-def clamp_graph(graph, **kwargs):
-    try:
-        for k, v in kwargs.items():
-            graph.clamp(k, v)
-        with pyro.condition(data=kwargs):
-            yield graph
-    finally:
-        for k in kwargs:
-            graph.unclamp(k)

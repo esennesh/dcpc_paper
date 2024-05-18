@@ -37,6 +37,9 @@ class BaseModel(pyro.nn.PyroModule):
 
 class ImportanceModel(BaseModel):
     def forward(self, *args, B=1, prior=False, P=1, **kwargs):
+        for child in self.children():
+            if hasattr(child, "batch_shape"):
+                child.batch_shape = (B,)
         with pyro.plate_stack("importance", (P, B)):
             if prior:
                 return self.model(*args, **kwargs)
