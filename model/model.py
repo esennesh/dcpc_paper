@@ -121,15 +121,9 @@ class BouncingMnistPpc(PpcGraphicalModel):
             self.add_node("X__%d" % t, ["z_what", "z_where__%d" % t],
                           MarkovKernelApplication("decoder", (), {}))
 
-    def forward(self, xs=None, **kwargs):
-        B, T, _, _ = xs.shape if xs is not None else (1, self._num_times, 0, 0)
-        if B == 1 and 'B' in kwargs:
-            B = kwargs.pop('B')
-        self.decoder.batch_shape = (B,)
-        self.digit_features.batch_shape = (B,)
-        self.digit_positions.batch_shape = (B,)
-        clamps = {"X__%d" % t: xs[:, t] for t in range(T) if xs is not None}
-        return super().forward(**clamps, B=B, **kwargs)
+    def conditioner(self, xs):
+        T = xs.shape[1]
+        return {"X__%d" % t: xs[:, t] for t in range(T)}
 
 class DiffusionPpc(PpcGraphicalModel):
     def __init__(self, dims, dim_mults=(1, 2, 4, 8), unet="Unet",
