@@ -91,17 +91,8 @@ class MnistPpc(PpcGraphicalModel):
         self.add_node("X", ["z3"], MarkovKernelApplication("likelihood", (),
                                                            {}))
 
-    def forward(self, xs=None, **kwargs):
-        if 'B' in kwargs:
-            B = kwargs.pop('B')
-        elif xs is not None:
-            B = xs.shape[0]
-        else:
-            B = 1
-        self.prior.batch_shape = (B,)
-        self.decoder1.batch_shape = self.decoder2.batch_shape = (B,)
-        self.likelihood.batch_shape = (B,)
-        return super().forward(X=xs, B=B, **kwargs)
+    def conditioner(self, data):
+        return {"X": data}
 
 class BouncingMnistPpc(PpcGraphicalModel):
     def __init__(self, dims, digit_side=28, hidden_dim=400, num_digits=3,
