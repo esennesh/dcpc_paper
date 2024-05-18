@@ -102,7 +102,8 @@ class LightningPpc(L.LightningModule):
     def _initialize_particles(self, batch, batch_idx, train=True):
         data, target, indices = batch
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
-            graph(lr=self.lr, B=data.shape[0], P=self.num_particles, prior=True)
+            graph(lr=self.lr, B=data.shape[0], mode="prior",
+                  P=self.num_particles)
             self._save_particles(indices, train)
 
     def _load_particles(self, indices, train=True):
@@ -142,20 +143,25 @@ class LightningPpc(L.LightningModule):
             checkpoint["particle_dicts"] = self.particles
 
     def ppc_step(self, data):
+        mode = "online" if self.online else None
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             for _ in range(self.num_sweeps - 1):
-                graph(lr=self.lr, B=data.shape[0], P=self.num_particles)
-            return graph(lr=self.lr, B=data.shape[0], P=self.num_particles)
+                graph(B=data.shape[0], lr=self.lr, mode=mode,
+                      P=self.num_particles)
+            return graph(B=data.shape[0], lr=self.lr, mode=mode,
+                         P=self.num_particles)
 
     def training_step(self, batch, batch_idx):
         data, _, indices = batch
         if self.online:
             with torch.no_grad():
-                self.graph(data, lr=self.lr, P=self.num_particles, prior=True)
+                conditioner = self.graph.conditioner(data)
+                with self.graph.condition(**conditioner) as graph:
+                    graph(lr=self.lr, mode="prior", P=self.num_particles)
         else:
             self._load_particles(indices, train=True)
         trace, log_weight = self.ppc_step(data)
-        loss = -log_weight.mean()
+        loss = -utils.logmeanexp(log_weight, dim=0).mean()
         if not self.online:
             self._save_particles(indices, train=True)
 
@@ -170,11 +176,13 @@ class LightningPpc(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         data, _, indices = batch
         if self.online:
-            self.graph(data, lr=self.lr, P=self.num_particles, prior=True)
+            conditioner = self.graph.conditioner(data)
+            with self.graph.condition(**conditioner) as graph:
+                graph(lr=self.lr, mode="prior", P=self.num_particles)
         else:
             self._load_particles(indices, train=False)
         trace, log_weight = self.ppc_step(data)
-        loss = -log_weight.mean()
+        loss = -utils.logmeanexp(log_weight, dim=0).mean()
         if not self.online:
             self._save_particles(indices, train=False)
 
