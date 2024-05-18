@@ -74,8 +74,8 @@ class MnistDataModule(L.LightningDataModule):
         if stage == "fit" or stage is None:
             mnist_full = datasets.MNIST(self.data_dir, train=True,
                                         transform=self.transform)
-            self.mnist_train, self.mnist_val = random_split(mnist_full, [55000,
-                                                                         5000])
+            self.mnist_train, self.mnist_val = random_split(mnist_full,
+                                                            [0.9, 0.1])
 
         if stage == "test" or stage is None:
             self.mnist_test = MNIST(self.data_dir, train=False,
