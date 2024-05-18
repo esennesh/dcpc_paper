@@ -19,7 +19,7 @@
         "type": "MnistDataModule",
         "args": {
             "data_dir": "data/",
-            "batch_size": 16384
+            "batch_size": 4096
         }
     },
     "lmodule": {
