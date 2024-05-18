@@ -111,31 +111,34 @@ class PpcGraphicalModel(GraphicalModel):
         return self.nodes[site]['errors']
 
     @torch.no_grad()
-    def get_posterior(self, name: str, event_dim: int, lr=1e-3) -> Distribution:
+    def get_posterior(self, name: str, event_dim: int, lr=1e-3, mode=None):
         z = self.nodes[name]['value']
         error = self._complete_conditional_error(name)
 
         proposal = dist.Normal(z + lr * error, math.sqrt(2 * lr))
         proposal = proposal.to_event(event_dim)
-        z_next = proposal.sample()
+        if mode == "online":
+            return proposal
+        else:
+            z_next = proposal.sample()
 
-        log_cc = self.log_complete_conditional(name, z_next)
-        log_proposal = proposal.log_prob(z_next)
-        particle_indices, log_Zcc = _resample(log_cc - log_proposal,
-                                              estimate_normalizer=True)
-        z_next = _ancestor_index(particle_indices, z_next)
-        log_cc = _ancestor_index(particle_indices, log_cc)
+            log_cc = self.log_complete_conditional(name, z_next)
+            log_proposal = proposal.log_prob(z_next)
+            particle_indices, log_Zcc = _resample(log_cc - log_proposal,
+                                                  estimate_normalizer=True)
+            z_next = _ancestor_index(particle_indices, z_next)
+            log_cc = _ancestor_index(particle_indices, log_cc)
 
-        return dist.Delta(z_next, log_cc - log_Zcc, event_dim=event_dim)
+            return dist.Delta(z_next, log_cc - log_Zcc, event_dim=event_dim)
 
-    def guide(self, lr=1e-3, **kwargs):
+    def guide(self, lr=1e-3, mode=None, **kwargs):
         results = ()
         for site, kernel in self.sweep(forward=False):
             if site in kwargs and kwargs[site] is not None:
                 self.clamp(site, kwargs[site])
             if not self.nodes[site]["is_observed"]:
                 posterior = self.get_posterior(site, kernel.func.event_dim,
-                                               lr=lr)
+                                               lr=lr, mode=mode)
                 self.update(site, pyro.sample(site, posterior))
 
             if len(list(self.child_sites(site))) == 0:
