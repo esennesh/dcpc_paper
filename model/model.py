@@ -145,13 +145,8 @@ class DiffusionPpc(PpcGraphicalModel):
             step_kernel = MarkovKernelApplication("diffusion", (), {"t": t})
             self.add_node("X__%d" % t, ["X__%d" % (t+1)], step_kernel)
 
-    def forward(self, xs=None, **kwargs):
-        B, C, _, _ = xs.shape if xs is not None else (1, self._channels, 0, 0)
-        if B == 1 and 'B' in kwargs:
-            B = kwargs.pop('B')
-        self.diffusion.batch_shape = (B,)
-        self.prior.batch_shape = (B,)
-        return super().forward(X__0=xs, B=B, **kwargs)
+    def conditioner(self, data):
+        return {"X__0": data}
 
 class CelebAPpc(PpcGraphicalModel):
     def __init__(self, dims, z_dim=40, hidden_dim=256):
