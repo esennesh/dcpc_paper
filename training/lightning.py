@@ -130,6 +130,9 @@ class LightningPpc(L.LightningModule):
         return {"lr_scheduler": lr_scheduler, "monitor": "valid/loss",
                 "optimizer": optimizer}
 
+    def forward(self, *args, **kwargs):
+        return self.predictive(*args, **kwargs)
+
     def on_load_checkpoint(self, checkpoint):
         if not self.online:
             self.particles = checkpoint["particle_dicts"]
