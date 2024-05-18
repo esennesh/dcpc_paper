@@ -155,7 +155,7 @@ class LightningPpc(L.LightningModule):
         else:
             self._load_particles(indices, train=True)
         trace, log_weight = self.ppc_step(data)
-        loss = -log_weight.mean()
+        loss = -utils.logmeanexp(log_weight, dim=0).mean()
         if not self.online:
             self._save_particles(indices, train=True)
 
@@ -174,7 +174,7 @@ class LightningPpc(L.LightningModule):
         else:
             self._load_particles(indices, train=False)
         trace, log_weight = self.ppc_step(data)
-        loss = -log_weight.mean()
+        loss = -utils.logmeanexp(log_weight, dim=0).mean()
         if not self.online:
             self._save_particles(indices, train=False)
 
