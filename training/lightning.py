@@ -101,8 +101,9 @@ class LightningPpc(L.LightningModule):
 
     def _initialize_particles(self, batch, batch_idx, train=True):
         data, target, indices = batch
-        self.graph(data, lr=self.lr, P=self.num_particles, prior=True)
-        self._save_particles(indices, train)
+        with self.graph.condition(**self.graph.conditioner(data)) as graph:
+            graph(lr=self.lr, B=data.shape[0], P=self.num_particles, prior=True)
+            self._save_particles(indices, train)
 
     def _load_particles(self, indices, train=True):
         particles = self.particles["train" if train else "valid"]
@@ -138,9 +139,10 @@ class LightningPpc(L.LightningModule):
             checkpoint["particle_dicts"] = self.particles
 
     def ppc_step(self, data):
-        for _ in range(self.num_sweeps - 1):
-            self.graph(data, lr=self.lr, P=self.num_particles)
-        return self.graph(data, lr=self.lr, P=self.num_particles)
+        with self.graph.condition(**self.graph.conditioner(data)) as graph:
+            for _ in range(self.num_sweeps - 1):
+                graph(lr=self.lr, B=data.shape[0], P=self.num_particles)
+            return graph(lr=self.lr, B=data.shape[0], P=self.num_particles)
 
     def training_step(self, batch, batch_idx):
         data, _, indices = batch
