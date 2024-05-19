@@ -253,9 +253,9 @@ class ConvolutionalDecoder(MarkovKernel):
              nn.ConvTranspose2d(32, 32, 3, 1, 1)),
             nn.SiLU(),
             nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 128 else\
-            nn.ConvTranspose2d(32, channels, 4, 2, 1),
+                nn.ConvTranspose2d(32, channels * 2, 4, 2, 1),
             nn.SiLU() if img_side == 128 else nn.Identity(),
-            nn.ConvTranspose2d(32, channels, 4, 2, 1) if img_side == 128 else nn.Identity(),
+            nn.ConvTranspose2d(32, channels * 2, 4, 2, 1) if img_side == 128 else nn.Identity(),
         )
 
     @property
@@ -266,9 +266,10 @@ class ConvolutionalDecoder(MarkovKernel):
         P, B, _ = zs.shape
         hs = self.linear(zs)
         hs = hs.view(P*B, *hs.shape[2:], 1, 1)
-        loc = self.convs(hs).view(P, B, self._channels, self._img_side,
-                                  self._img_side)
-        return dist.Normal(loc, 1.).to_event(3)
+        hs = self.convs(hs).view(P, B, 2, self._channels, self._img_side,
+                                 self._img_side)
+        loc, log_scale = hs.unbind(dim=2)
+        return dist.Normal(F.sigmoid(loc), log_scale.exp()).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def __init__(self):
