@@ -123,7 +123,8 @@ class LightningPpc(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.graph.parameters(), amsgrad=True,
-                                     lr=self.lr, weight_decay=0.)
+                                     lr=self.lr / self._num_train,
+                                     weight_decay=0.)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, cooldown=self.cooldown, factor=self.factor,
             patience=self.patience
