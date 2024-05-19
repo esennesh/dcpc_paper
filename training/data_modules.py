@@ -176,7 +176,7 @@ class BouncingMnistDataModule(L.LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
         self.data_dir = data_dir
-        self.dims = (10, 1, 96, 96)
+        self.dims = (20, 1, 96, 96)
         self.transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Lambda(lambda t: t.mT)
@@ -203,7 +203,7 @@ class MiniBouncingMnistDataModule(L.LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
         self.data_dir = data_dir
-        self.dims = (10, 1, 96, 96)
+        self.dims = (20, 1, 96, 96)
         self.transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Lambda(lambda t: t.mT)
