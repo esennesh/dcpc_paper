@@ -228,7 +228,7 @@ class DiffusionStep(MarkovKernel):
         P, B, C, W, H = xs_prev.shape
         score = self.unet(xs_prev.view(P*B, C, W, H),
                           torch.tensor(t, device=xs_prev.device,
-                                       dtype=torch.long).repeat(P*B))["sample"]
+                                       dtype=torch.long).repeat(P*B))
         score = score.view(*xs_prev.shape)
         beta = self.betas[t]
         alpha, alpha_bar = self.alphas[t], self.alpha_bars[t]
