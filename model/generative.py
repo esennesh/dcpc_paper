@@ -75,11 +75,6 @@ class DigitsDecoder(MarkovKernel):
         scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
         self.register_buffer('scale', scale)
 
-        mean_digit = torch.from_numpy(np.load(mnist_mean)) if mnist_mean else\
-                     torch.zeros(digit_side, digit_side)
-        self.register_buffer("digits_mean",
-                             mean_digit.to(dtype=torch.float).flatten())
-
         self.translate = (x_side - digit_side) / digit_side
         self._digits = {}
 
