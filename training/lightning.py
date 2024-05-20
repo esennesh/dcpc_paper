@@ -69,7 +69,7 @@ class LightningPpc(L.LightningModule):
     """
     def __init__(self, graph: PpcGraphicalModel, data: L.LightningDataModule,
                  cooldown=50, factor=0.9, lr=1e-3, num_particles=4,
-                 num_sweeps=1, patience=100, online=False):
+                 num_sweeps=1, patience=100, resampling=True):
         super().__init__()
         self.save_hyperparameters(ignore=["data", "graph"])
         self.cooldown = cooldown
@@ -79,25 +79,24 @@ class LightningPpc(L.LightningModule):
         self.graph = graph
         self.num_particles = num_particles
         self.num_sweeps = num_sweeps
-        self.online = online
         self.patience = patience
         self.predictive = Predictive(self.graph.model, guide=self.graph.guide,
                                      num_samples=self.num_particles)
+        self.resampling = resampling
 
         self._num_train = len(data.train_dataloader().dataset)
         self._num_valid = len(data.val_dataloader().dataset)
 
     def setup(self, stage):
-        if not self.online:
-            num_train, num_valid = self._num_train, self._num_valid
-            self.particles = {
-                "train": ParticleDict(num_train, self.num_particles),
-                "valid": ParticleDict(num_valid, self.num_particles)
-            }
-            for batch_idx, batch in enumerate(self.data.train_dataloader()):
-                self._initialize_particles(batch, batch_idx)
-            for batch_idx, batch in enumerate(self.data.val_dataloader()):
-                self._initialize_particles(batch, batch_idx, False)
+        num_train, num_valid = self._num_train, self._num_valid
+        self.particles = {
+            "train": ParticleDict(num_train, self.num_particles),
+            "valid": ParticleDict(num_valid, self.num_particles)
+        }
+        for batch_idx, batch in enumerate(self.data.train_dataloader()):
+            self._initialize_particles(batch, batch_idx)
+        for batch_idx, batch in enumerate(self.data.val_dataloader()):
+            self._initialize_particles(batch, batch_idx, False)
 
     def _initialize_particles(self, batch, batch_idx, train=True):
         data, target, indices = batch
@@ -136,15 +135,13 @@ class LightningPpc(L.LightningModule):
         return self.predictive(*args, **kwargs)
 
     def on_load_checkpoint(self, checkpoint):
-        if not self.online:
-            self.particles = checkpoint["particle_dicts"]
+        self.particles = checkpoint["particle_dicts"]
 
     def on_save_checkpoint(self, checkpoint):
-        if not self.online:
-            checkpoint["particle_dicts"] = self.particles
+        checkpoint["particle_dicts"] = self.particles
 
     def ppc_step(self, data):
-        mode = "online" if self.online else None
+        mode = "online" if not self.resampling else None
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             for _ in range(self.num_sweeps - 1):
                 graph(B=data.shape[0], lr=self.lr, mode=mode,
@@ -154,17 +151,10 @@ class LightningPpc(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         data, _, indices = batch
-        if self.online:
-            with torch.no_grad():
-                conditioner = self.graph.conditioner(data)
-                with self.graph.condition(**conditioner) as graph:
-                    graph(lr=self.lr, mode="prior", P=self.num_particles)
-        else:
-            self._load_particles(indices, train=True)
+        self._load_particles(indices, train=True)
         trace, log_weight = self.ppc_step(data)
         loss = -utils.logmeanexp(log_weight, dim=0).mean()
-        if not self.online:
-            self._save_particles(indices, train=True)
+        self._save_particles(indices, train=True)
 
         self.log("train/ess", metric.ess(trace, log_weight.detach()))
         self.log("train/log_joint", metric.log_joint(trace,
@@ -176,16 +166,10 @@ class LightningPpc(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         data, _, indices = batch
-        if self.online:
-            conditioner = self.graph.conditioner(data)
-            with self.graph.condition(**conditioner) as graph:
-                graph(lr=self.lr, mode="prior", P=self.num_particles)
-        else:
-            self._load_particles(indices, train=False)
+        self._load_particles(indices, train=False)
         trace, log_weight = self.ppc_step(data)
         loss = -utils.logmeanexp(log_weight, dim=0).mean()
-        if not self.online:
-            self._save_particles(indices, train=False)
+        self._save_particles(indices, train=False)
 
         self.log("valid/ess", metric.ess(trace, log_weight.detach()),
                  sync_dist=True)
