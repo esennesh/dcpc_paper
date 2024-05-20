@@ -104,7 +104,8 @@ class BouncingMnistPpc(PpcGraphicalModel):
         self.decoder = DigitsDecoder(digit_side, hidden_dim, dims[-1],
                                      z_what_dim, mnist_mean)
         self.digit_features = DigitFeatures(num_digits, z_what_dim)
-        self.digit_positions = DigitPositions(num_digits, z_where_dim)
+        self.digit_positions = DigitPositions(num_digits=num_digits,
+                                              z_where_dim=z_where_dim)
 
         self.add_node("z_what", [],
                       MarkovKernelApplication("digit_features", (), {}))
