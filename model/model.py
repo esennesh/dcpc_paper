@@ -96,13 +96,13 @@ class MnistPpc(PpcGraphicalModel):
 
 class BouncingMnistPpc(PpcGraphicalModel):
     def __init__(self, dims, digit_side=28, hidden_dim=400, num_digits=3,
-                 z_what_dim=10, z_where_dim=2, mnist_mean=None):
+                 z_what_dim=10, z_where_dim=2):
         super().__init__()
         self._num_digits = num_digits
         self._num_times = dims[0]
 
         self.decoder = DigitsDecoder(digit_side, hidden_dim, dims[-1],
-                                     z_what_dim, mnist_mean)
+                                     z_what_dim)
         self.digit_features = DigitFeatures(num_digits, z_what_dim)
         self.digit_positions = DigitPositions(num_digits=num_digits,
                                               z_where_dim=z_where_dim)
