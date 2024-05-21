@@ -1,53 +1,49 @@
 {
     "name": "BouncingMnist_Ppc",
-    "n_gpu": 1,
 
     "arch": {
         "type": "BouncingMnistPpc",
+        "args": {}
+    },
+    "checkpoint": {
+        "type": "ModelCheckpoint",
         "args": {
-          "temperature": 0.0001
+            "auto_insert_metric_name": false,
+            "every_n_epochs": 10,
+            "filename": "checkpoint_{epoch}",
+            "mode": "min",
+            "monitor": "valid/loss"
         }
     },
-    "data_loader": {
-        "type": "BouncingMnistDataLoader",
-        "args":{
+    "data_module": {
+        "type": "BouncingMnistDataModule",
+        "args": {
             "data_dir": "data/",
-            "batch_size": 512,
-            "shuffle": true,
-            "validation_split": 0.1,
-            "num_workers": 2
+            "batch_size": 448
         }
     },
-    "optimizer": {
-        "type": "Adam",
+    "lmodule": {
+        "type": "LightningPpc",
         "args": {
-            "optim_args": {
-                "lr": 0.0001,
-                "weight_decay": 0,
-                "amsgrad": true
-            }
+            "cooldown": 50,
+            "factor": 0.9,
+            "lr": 0.001,
+            "num_particles": 10,
+            "num_sweeps": 1,
+            "patience": 100
         }
     },
-    "lr_scheduler": {
-        "type": "ReduceLROnPlateau",
-        "args": {
-          "patience": 100,
-          "cooldown": 25,
-          "factor": 0.9
-        }
+    "logger": {
+        "type": "TensorBoardLogger",
+        "args": {}
     },
-    "metrics": ["ess", "log_marginal", "log_joint"],
     "trainer": {
-        "epochs": 1000,
-        "monitor": "min val_loss",
-        "save_dir": "saved/",
-        "save_period": 1,
-        "tensorboard": true,
-        "verbosity": 2,
-        "type": "PpcTrainer",
+        "type": "Trainer",
         "args": {
-            "num_particles": 8,
-            "num_sweeps": 4
+          "default_root_dir": "saved/",
+          "devices": -1,
+          "max_epochs": 1000,
+          "min_epochs": 1
         }
     }
 }
