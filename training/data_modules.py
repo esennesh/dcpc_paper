@@ -3,7 +3,7 @@ import numpy as np
 import os
 from PIL import Image
 import torch
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, TensorDataset
 from torchvision import datasets, transforms
 from typing import Any, Callable, Optional, Tuple
 
@@ -322,3 +322,39 @@ class Flowers102DataModule(L.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.flowers102_val), num_workers=2,
                           batch_size=self.batch_size)
+
+class CifarMemoryDataModule(L.LightningDataModule):
+    def __init__(self, data_dir, batch_size, num_seqs=5, seq_len=10, side=32):
+        super().__init__()
+        self.batch_size = batch_size
+        self.data_dir = data_dir
+        self.num_seqs = num_seqs
+        self.transform = transforms.Compose([
+            transforms.Resize(side),
+            transforms.ToTensor()
+        ])
+        self.dims = (seq_len, 3, side, side)
+
+    def prepare_data(self):
+        datasets.CIFAR10(self.data_dir, train=True, download=True,
+                         transform=self.transform)
+
+    def setup(self, stage=None):
+        self.cifar10_train = datasets.CIFAR10(self.data_dir, train=True,
+                                              download=True,
+                                              transform=self.transform)
+        seqs = []
+        for _ in range(self.num_seqs):
+            indices = torch.randint(0, len(self.cifar10_train), (self.dims[0],))
+            seq = [self.cifar10_train[idx][0] for idx in indices]
+            seqs.append(torch.stack(seq, dim=0))
+        seqs = torch.stack(seqs, dim=0)
+        targets = torch.zeros(len(seqs), 1)
+        self.sequences = TensorDataset(seqs, targets)
+
+    def train_dataloader(self):
+        return DataLoader(IndexedDataset(self.sequences), num_workers=2,
+                          batch_size=self.batch_size)
+
+    def val_dataloader(self):
+        return self.train_dataloader()
