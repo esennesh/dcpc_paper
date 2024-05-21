@@ -121,8 +121,11 @@ class LightningPpc(L.LightningModule):
                                     particle_vals.to(device='cpu'))
 
     def configure_optimizers(self):
+        dimz = 0
+        for k, v in self.particles["train"].items():
+            dimz += math.prod(v.shape[1:])
         optimizer = torch.optim.Adam(self.graph.parameters(), amsgrad=True,
-                                     lr=self.lr / self._num_train,
+                                     lr=self.lr * self._num_train / dimz,
                                      weight_decay=0.)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, cooldown=self.cooldown, factor=self.factor,
