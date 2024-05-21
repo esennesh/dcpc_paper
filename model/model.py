@@ -164,3 +164,39 @@ class CelebAPpc(PpcGraphicalModel):
 
     def conditioner(self, data):
         return {"X": data}
+
+class SequentialMemoryPpc(PpcGraphicalModel):
+    def __init__(self, dims, z_dim=480, u_dim=0, nonlinearity=nn.Tanh):
+        super().__init__()
+        self._num_times, C, W, H = dims
+        self._u_dim = u_dim
+        self._x_shape = (C, W, H)
+
+        self.emission = GaussianEmission(z_dim, C*W*H, u_dim=u_dim,
+                                         nonlinearity=nonlinearity)
+        if u_dim:
+            self.policy = GaussianPrior(u_dim)
+        self.prior = GaussianPrior(z_dim)
+        self.transition = GaussianSsm(z_dim, u_dim=u_dim,
+                                      nonlinearity=nonlinearity)
+
+        self.add_node("z__0", [], MarkovKernelApplication("prior", (), {}))
+        for t in range(self._num_times):
+            transition_parents = ["z__%d" % t]
+            emission_parents = ["z__%d" % (t+1)]
+            if self._u_dim:
+                self.add_node("u__%d" % (t+1), [],
+                              MarkovKernelApplication("policy", (), {}))
+                transition_parents.append("u__%d" % (t+1))
+                emission_parents.append("u__%d" % (t+1))
+
+            self.add_node("z__%d" % (t+1), transition_parents,
+                          MarkovKernelApplication("transition", (), {}))
+            self.add_node("X__%d" % (t+1), emission_parents,
+                          MarkovKernelApplication("emission", (), {}))
+
+    def conditioner(self, xs):
+        T = xs.shape[1]
+        assert self._num_times == T
+        return {"X__%d" % (t+1): xs[:, t].view(-1, math.prod(self._x_shape))
+                for t in range(T)}
