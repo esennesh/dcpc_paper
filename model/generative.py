@@ -199,6 +199,35 @@ class GaussianSsm(MarkovKernel):
             z_next = z_next + self.control_dynamics(u)
         return dist.MultivariateNormal(z_next, scale_tril=scale)
 
+class GaussianEmission(MarkovKernel):
+    def __init__(self, z_dim, x_dim, u_dim=0, nonlinearity=nn.Identity):
+        super().__init__()
+        self.batch_shape = ()
+
+        self._u_dim = u_dim
+        if u_dim:
+            self.control_emission = nn.Sequential(
+                nonlinearity(), nn.Linear(u_dim, x_dim, bias=False)
+            )
+        self.covariance = nn.Parameter(torch.eye(x_dim))
+        self.emission = nn.Sequential(
+            nonlinearity(), nn.Linear(z_dim, x_dim, bias=False)
+        )
+
+    @property
+    def event_dim(self):
+        return 1
+
+    def forward(self, z: torch.Tensor, u=None) -> dist.Distribution:
+        assert (self._u_dim > 0) == (u is not None)
+
+        scale = torch.tril(self.covariance).expand(*self.batch_shape,
+                                                   *self.covariance.shape)
+        x = self.emission(z)
+        if self._u_dim:
+            x = x + self.control_emission(u)
+        return dist.MultivariateNormal(x, scale_tril=scale)
+
 class MlpBernoulliLikelihood(MarkovKernel):
     def __init__(self, in_dim, out_shape, nonlinearity=nn.ReLU):
         super().__init__()
