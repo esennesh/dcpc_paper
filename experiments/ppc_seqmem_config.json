@@ -1,0 +1,51 @@
+{
+    "name": "SequentialMemory_Ppc",
+
+    "arch": {
+        "type": "SequentialMemoryPpc",
+        "args": {}
+    },
+    "checkpoint": {
+        "type": "ModelCheckpoint",
+        "args": {
+            "auto_insert_metric_name": false,
+            "every_n_epochs": 10,
+            "filename": "checkpoint_{epoch}",
+            "mode": "min",
+            "monitor": "valid/loss"
+        }
+    },
+    "data_module": {
+        "type": "CifarMemoryDataModule",
+        "args": {
+            "data_dir": "data/",
+            "batch_size": 50,
+            "num_seqs": 100,
+            "seq_len": 7
+        }
+    },
+    "lmodule": {
+        "type": "LightningPpc",
+        "args": {
+            "cooldown": 50,
+            "factor": 0.9,
+            "lr": 0.001,
+            "num_particles": 4,
+            "num_sweeps": 1,
+            "patience": 100
+        }
+    },
+    "logger": {
+        "type": "TensorBoardLogger",
+        "args": {}
+    },
+    "trainer": {
+        "type": "Trainer",
+        "args": {
+          "default_root_dir": "saved/",
+          "devices": 1,
+          "max_epochs": 1000,
+          "min_epochs": 1
+        }
+    }
+}
