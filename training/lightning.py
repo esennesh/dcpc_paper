@@ -121,12 +121,8 @@ class LightningPpc(L.LightningModule):
                                     particle_vals.to(device='cpu'))
 
     def configure_optimizers(self):
-        dimz = 0
-        for k, v in self.particles["train"].items():
-            dimz += math.prod(v.shape[1:])
         optimizer = torch.optim.Adam(self.graph.parameters(), amsgrad=True,
-                                     lr=self.lr * self._num_train / dimz,
-                                     weight_decay=0.)
+                                     lr=self.lr, weight_decay=0.)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, cooldown=self.cooldown, factor=self.factor,
             patience=self.patience
@@ -165,7 +161,7 @@ class LightningPpc(L.LightningModule):
         self.log("train/log_marginal", metric.log_marginal(trace,
                                                            log_weight.detach()))
         self.log("train/loss", loss)
-        return loss
+        return loss * self._num_train
 
     def validation_step(self, batch, batch_idx):
         data, _, indices = batch
