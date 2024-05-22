@@ -19,7 +19,7 @@
         "type": "CifarMemoryDataModule",
         "args": {
             "data_dir": "data/",
-            "batch_size": 50,
+            "batch_size": 8,
             "num_seqs": 100,
             "seq_len": 7
         }
