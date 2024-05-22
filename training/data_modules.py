@@ -339,21 +339,31 @@ class CifarMemoryDataModule(L.LightningDataModule):
         datasets.CIFAR10(self.data_dir, train=True, download=True,
                          transform=self.transform)
 
-    def setup(self, stage=None):
-        self.cifar10_train = datasets.CIFAR10(self.data_dir, train=True,
-                                              download=True,
-                                              transform=self.transform)
+    def _sample_seqs(self, imgs):
         seqs = []
-        for _ in range(self.num_seqs):
-            indices = torch.randint(0, len(self.cifar10_train), (self.dims[0],))
-            seq = [self.cifar10_train[idx][0] for idx in indices]
+        for i in range(self.num_seqs):
+            indices = torch.randint(0, len(imgs), (self.dims[0],))
+            seq = [imgs[idx][0] for idx in indices]
             seqs.append(torch.stack(seq, dim=0))
-        seqs = torch.stack(seqs, dim=0)
-        targets = torch.zeros(len(seqs), 1)
-        self.sequences = TensorDataset(seqs, targets)
+        return torch.stack(seqs, dim=0), torch.zeros(len(seqs), 1)
+
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+            self.cifar10_train = datasets.CIFAR10(self.data_dir, train=True,
+                                                  download=True,
+                                                  transform=self.transform)
+            seqs, targets = self._sample_seqs(self.cifar10_train)
+            self.train_sequences = TensorDataset(seqs, targets)
+
+        if stage == "test" or stage is None:
+            self.cifar10_test = datasets.CIFAR10(self.data_dir, train=False,
+                                                  download=True,
+                                                  transform=self.transform)
+            seqs, targets = self._sample_seqs(self.cifar10_test)
+            self.test_sequences = TensorDataset(seqs, targets)
 
     def train_dataloader(self):
-        return DataLoader(IndexedDataset(self.sequences), num_workers=2,
+        return DataLoader(IndexedDataset(self.train_sequences), num_workers=2,
                           batch_size=self.batch_size)
 
     def val_dataloader(self):
