@@ -45,7 +45,7 @@ def main(config):
     logger = config.get_logger("train")
     logger.info(config.log_dir)
     dm, model, trainer = setup(config)
-    trainer.fit(model, dm)
+    trainer.fit(model, dm, ckpt_path=config.resume)
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser(description='Population Predictive Coding (PPC) training script')
