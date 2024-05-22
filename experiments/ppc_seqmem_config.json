@@ -19,7 +19,7 @@
         "type": "CifarMemoryDataModule",
         "args": {
             "data_dir": "data/",
-            "batch_size": 8,
+            "batch_size": 128,
             "num_seqs": 100,
             "seq_len": 7
         }
@@ -29,7 +29,7 @@
         "args": {
             "cooldown": 50,
             "factor": 0.9,
-            "lr": 0.001,
+            "lr": 5e-4,
             "num_particles": 4,
             "num_sweeps": 1,
             "patience": 100
@@ -43,8 +43,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": 1,
-          "max_epochs": 1000,
+          "devices": [2,3,4,5,6,7],
+          "max_epochs": 600,
           "min_epochs": 1
         }
     }
