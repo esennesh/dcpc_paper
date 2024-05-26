@@ -341,7 +341,7 @@ class FixedVarianceDecoder(MarkovKernel):
         self._img_side = img_side
 
         self.likelihood_scale = scale
-        self.mean_network = NLVM(z_dim, channels)
+        self.mean_network = NLVM(z_dim, channels, nonlinearity=F.sigmoid)
 
     @property
     def event_dim(self):
