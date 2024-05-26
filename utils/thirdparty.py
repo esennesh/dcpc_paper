@@ -6,7 +6,102 @@ import pandas as pd
 from pathlib import Path
 import pyro
 import torch
+from torch import nn
 import torch.nn.functional as F
+
+class Deterministic(nn.Module):
+    """
+    The Deterministic Layer used in NLVM.
+    """
+    def __init__(self, in_dim: int, out_dim: int, activation=F.gelu):
+        super(Deterministic, self).__init__()
+
+        self.activation = activation
+
+        self.conv = nn.Conv2d(in_dim, out_dim, kernel_size=5, stride=1,
+                              padding=2)
+        self.conv2 = nn.Conv2d(out_dim, out_dim, kernel_size=3, stride=1,
+                               padding=1)
+
+        self.bn = nn.BatchNorm2d(out_dim)
+        self.bn2 = nn.BatchNorm2d(out_dim)
+
+    def forward(self, x):
+        out = self.conv(x)
+        out = self.bn(out)
+        out = self.activation(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.activation(out)
+        out = out + x  # Skip connection
+        return out
+
+class Projection(nn.Module):
+    """
+    The Projection Layer used in NLVM.
+    """
+    def __init__(self, in_dim: int, ngf: int = 16, coef: int = 4,
+                 activation=F.gelu):
+        super(Projection, self).__init__()
+
+        self.activation = activation
+        self.ngf = 16
+        self.coef = 4
+
+        self.linear = nn.Linear(in_dim, coef * ngf * ngf)
+        self.deconv1 = nn.ConvTranspose2d(coef, ngf * coef, kernel_size=5,
+                                          stride=1, padding=2, bias=False)
+        self.linear_bn = nn.BatchNorm1d(coef * ngf * ngf)
+        self.deconv1_bn = nn.BatchNorm2d(ngf * coef)
+
+    def forward(self, x):
+        out = self.linear(x)
+        out = self.linear_bn(out)
+        out = self.activation(out)
+        out = out.view(out.size(0), self.coef, self.ngf, self.ngf).contiguous()
+        out = self.deconv1(out)
+        out = self.deconv1_bn(out)
+        out = self.activation(out)
+        return out
+
+class Output(nn.Module):
+    """
+    The Output Layer used in NLVM.
+    """
+    def __init__(self, x_in: int, nc: int):
+        super(Output, self).__init__()
+        self.output_layer = nn.ConvTranspose2d(x_in, nc, kernel_size=4,
+                                               stride=2, padding=1)
+
+    def forward(self, x: TensorType[..., 'n_channels', 'in_dim1', 'in_dim2']
+                ) -> TensorType[...,  'n_channels', 'out_dim1', 'out_dim2']:
+        out = self.output_layer(x)
+        out = torch.tanh(out)
+        return out
+
+class NLVM(nn.Module):
+    """
+    Implementation of the model, taken from: https://github.com/juankuntz/ParEM/blob/main/torch/parem/models.py.
+    Similar to https://github.com/enijkamp/short_run_inf.
+    """
+    def __init__(self, x_dim: int = 1, nc: int = 3, ngf: int = 16,
+                 coef: int = 4):
+        super(NLVM, self).__init__()
+        self.x_dim = x_dim
+        self.ngf = ngf
+        self.nc = nc
+
+        self.projection_layer = Projection(x_dim, ngf=ngf, coef=coef)
+        self.deterministic_layer_1 = Deterministic(ngf * coef, ngf * coef)
+        self.deterministic_layer_2 = Deterministic(ngf * coef, ngf * coef)
+        self.output_layer = Output(ngf * coef, nc)
+
+    def forward(self, x):
+        out = self.projection_layer(x)
+        out = self.deterministic_layer_1(out)
+        out = self.deterministic_layer_2(out)
+        out = self.output_layer(out)
+        return out
 
 class ScoreNetwork0(torch.nn.Module):
     # takes an input image and time, returns the score function
