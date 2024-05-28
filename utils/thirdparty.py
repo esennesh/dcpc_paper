@@ -23,8 +23,8 @@ class Deterministic(nn.Module):
         self.conv2 = nn.Conv2d(out_dim, out_dim, kernel_size=3, stride=1,
                                padding=1)
 
-        self.bn = nn.BatchNorm2d(out_dim)
-        self.bn2 = nn.BatchNorm2d(out_dim)
+        self.bn = nn.BatchNorm2d(out_dim, track_running_stats=False)
+        self.bn2 = nn.BatchNorm2d(out_dim, track_running_stats=False)
 
     def forward(self, x):
         out = self.conv(x)
@@ -51,8 +51,10 @@ class Projection(nn.Module):
         self.linear = nn.Linear(in_dim, coef * ngf * ngf)
         self.deconv1 = nn.ConvTranspose2d(coef, ngf * coef, kernel_size=5,
                                           stride=1, padding=2, bias=False)
-        self.linear_bn = nn.BatchNorm1d(coef * ngf * ngf)
-        self.deconv1_bn = nn.BatchNorm2d(ngf * coef)
+        self.linear_bn = nn.BatchNorm1d(coef * ngf * ngf,
+                                        track_running_stats=False)
+        self.deconv1_bn = nn.BatchNorm2d(ngf * coef,
+                                         track_running_stats=False)
 
     def forward(self, x):
         out = self.linear(x)
@@ -74,8 +76,7 @@ class Output(nn.Module):
         self.output_layer = nn.ConvTranspose2d(x_in, nc, kernel_size=4,
                                                stride=2, padding=1)
 
-    def forward(self, x: TensorType[..., 'n_channels', 'in_dim1', 'in_dim2']
-                ) -> TensorType[...,  'n_channels', 'out_dim1', 'out_dim2']:
+    def forward(self, x):
         out = self.output_layer(x)
         out = self.nonlinearity(out)
         return out
