@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, ImportanceModel, MarkovKernel
 from base import MarkovKernelApplication
-from utils import ScoreNetwork0, soft_clamp
+from utils.thirdparty import NLVM, ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
     def __init__(self, hidden_dim=10, num_digits=3, z_where_dim=2):
@@ -332,6 +332,27 @@ class ConvolutionalDecoder(MarkovKernel):
                                  self._img_side)
         return dist.Normal(F.sigmoid(hs),
                            self.log_scale.exp() + 1e-4).to_event(3)
+
+class FixedVarianceDecoder(MarkovKernel):
+    def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
+        super().__init__()
+        self.batch_shape = ()
+        self._channels = channels
+        self._img_side = img_side
+
+        self.likelihood_scale = scale
+        self.mean_network = NLVM(z_dim, channels, nonlinearity=F.sigmoid)
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self, zs: torch.Tensor) -> dist.Distribution:
+        P, B, _ = zs.shape
+        loc = self.mean_network(zs.view(P*B, -1)).view(P, B, self._channels,
+                                                       self._img_side,
+                                                       self._img_side)
+        return dist.Normal(loc, self.likelihood_scale).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def __init__(self):

@@ -149,14 +149,18 @@ class DiffusionPpc(PpcGraphicalModel):
     def conditioner(self, data):
         return {"X__0": data}
 
-class CelebAPpc(PpcGraphicalModel):
-    def __init__(self, dims, z_dim=40, hidden_dim=256):
+class GeneratorPpc(PpcGraphicalModel):
+    def __init__(self, dims, z_dim=40, heteroskedastic=True, hidden_dim=256):
         super().__init__()
         self._channels = dims[0]
 
         self.prior = GaussianPrior(z_dim, False)
-        self.likelihood = ConvolutionalDecoder(dims[0], z_dim, hidden_dim,
-                                               dims[-1])
+        if heteroskedastic:
+            self.likelihood = ConvolutionalDecoder(dims[0], z_dim, hidden_dim,
+                                                   dims[-1])
+        else:
+            self.likelihood = FixedVarianceDecoder(dims[0], dims[-1],
+                                                   z_dim=z_dim)
 
         self.add_node("z", [], MarkovKernelApplication("prior", (), {}))
         self.add_node("X", ["z"], MarkovKernelApplication("likelihood", (),

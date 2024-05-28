@@ -23,8 +23,8 @@ class Deterministic(nn.Module):
         self.conv2 = nn.Conv2d(out_dim, out_dim, kernel_size=3, stride=1,
                                padding=1)
 
-        self.bn = nn.BatchNorm2d(out_dim)
-        self.bn2 = nn.BatchNorm2d(out_dim)
+        self.bn = nn.BatchNorm2d(out_dim, track_running_stats=False)
+        self.bn2 = nn.BatchNorm2d(out_dim, track_running_stats=False)
 
     def forward(self, x):
         out = self.conv(x)
@@ -51,8 +51,10 @@ class Projection(nn.Module):
         self.linear = nn.Linear(in_dim, coef * ngf * ngf)
         self.deconv1 = nn.ConvTranspose2d(coef, ngf * coef, kernel_size=5,
                                           stride=1, padding=2, bias=False)
-        self.linear_bn = nn.BatchNorm1d(coef * ngf * ngf)
-        self.deconv1_bn = nn.BatchNorm2d(ngf * coef)
+        self.linear_bn = nn.BatchNorm1d(coef * ngf * ngf,
+                                        track_running_stats=False)
+        self.deconv1_bn = nn.BatchNorm2d(ngf * coef,
+                                         track_running_stats=False)
 
     def forward(self, x):
         out = self.linear(x)
@@ -68,15 +70,15 @@ class Output(nn.Module):
     """
     The Output Layer used in NLVM.
     """
-    def __init__(self, x_in: int, nc: int):
+    def __init__(self, x_in: int, nc: int, nonlinearity=F.tanh):
         super(Output, self).__init__()
+        self.nonlinearity = nonlinearity
         self.output_layer = nn.ConvTranspose2d(x_in, nc, kernel_size=4,
                                                stride=2, padding=1)
 
-    def forward(self, x: TensorType[..., 'n_channels', 'in_dim1', 'in_dim2']
-                ) -> TensorType[...,  'n_channels', 'out_dim1', 'out_dim2']:
+    def forward(self, x):
         out = self.output_layer(x)
-        out = torch.tanh(out)
+        out = self.nonlinearity(out)
         return out
 
 class NLVM(nn.Module):
@@ -85,7 +87,7 @@ class NLVM(nn.Module):
     Similar to https://github.com/enijkamp/short_run_inf.
     """
     def __init__(self, x_dim: int = 1, nc: int = 3, ngf: int = 16,
-                 coef: int = 4):
+                 coef: int = 4, nonlinearity=F.tanh):
         super(NLVM, self).__init__()
         self.x_dim = x_dim
         self.ngf = ngf
@@ -94,7 +96,7 @@ class NLVM(nn.Module):
         self.projection_layer = Projection(x_dim, ngf=ngf, coef=coef)
         self.deterministic_layer_1 = Deterministic(ngf * coef, ngf * coef)
         self.deterministic_layer_2 = Deterministic(ngf * coef, ngf * coef)
-        self.output_layer = Output(ngf * coef, nc)
+        self.output_layer = Output(ngf * coef, nc, nonlinearity)
 
     def forward(self, x):
         out = self.projection_layer(x)
