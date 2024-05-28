@@ -349,8 +349,9 @@ class FixedVarianceDecoder(MarkovKernel):
 
     def forward(self, zs: torch.Tensor) -> dist.Distribution:
         P, B, _ = zs.shape
-        loc = self.mean_network(zs).view(P, B, self._channels, self._img_side,
-                                         self._img_side)
+        loc = self.mean_network(zs.view(P*B, -1)).view(P, B, self._channels,
+                                                       self._img_side,
+                                                       self._img_side)
         return dist.Normal(loc, self.likelihood_scale).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
