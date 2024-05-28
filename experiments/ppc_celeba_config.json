@@ -1,9 +1,12 @@
 {
-    "name": "CelebA_Ppc",
+    "name": "Heteroskedastic_CelebA_Ppc",
 
     "arch": {
-        "type": "CelebAPpc",
-        "args": {}
+        "type": "GeneratorPpc",
+        "args": {
+            "heteroskedastic": true,
+            "z_dim": 40
+        }
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
