@@ -298,7 +298,8 @@ class DiffusionStep(MarkovKernel):
         return dist.Normal(loc, beta).to_event(3)
 
 class ConvolutionalDecoder(MarkovKernel):
-    def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
+    def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64,
+                 nonlinearity=nn.Sigmoid):
         super().__init__()
         self.batch_shape = ()
         self._channels = channels
@@ -306,17 +307,26 @@ class ConvolutionalDecoder(MarkovKernel):
 
         self.linear = nn.Sequential(nn.Linear(z_dim, hidden_dim), nn.SiLU())
         self.convs = nn.Sequential(
-            nn.ConvTranspose2d(hidden_dim, 64, 4, 1, 0), nn.SiLU(),
-            nn.ConvTranspose2d(64, 64, 4, 2, 1), nn.SiLU(),
-            nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.SiLU(),
+            nn.ConvTranspose2d(hidden_dim, 64, 4, 1, 0),
+            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+            nn.ConvTranspose2d(64, 64, 4, 2, 1),
+            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1),
+            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
             nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side in [64, 128] else
             (nn.ConvTranspose2d(32, 32, 3, 1, 0) if img_side == 28 else
              nn.ConvTranspose2d(32, 32, 3, 1, 1)),
+            nn.BatchNorm2d(32, track_running_stats=False),
             nn.SiLU(),
             nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 128 else\
                 nn.ConvTranspose2d(32, channels, 4, 2, 1),
+            nn.BatchNorm2d(32, track_running_stats=False) if img_side == 128\
+                else nn.BatchNorm2d(channels, track_running_stats=False),
             nn.SiLU() if img_side == 128 else nn.Identity(),
             nn.ConvTranspose2d(32, channels, 4, 2, 1) if img_side == 128 else nn.Identity(),
+            nn.BatchNorm2d(channels, track_running_stats=False)\
+                if img_side == 128 else nn.Identity(),
+            nonlinearity()
         )
         self.log_scale = nn.Parameter(torch.zeros(()))
 
@@ -330,8 +340,7 @@ class ConvolutionalDecoder(MarkovKernel):
         hs = hs.view(P*B, *hs.shape[2:], 1, 1)
         hs = self.convs(hs).view(P, B, self._channels, self._img_side,
                                  self._img_side)
-        return dist.Normal(F.sigmoid(hs),
-                           self.log_scale.exp() + 1e-4).to_event(3)
+        return dist.Normal(hs, self.log_scale.exp() + 1e-4).to_event(3)
 
 class FixedVarianceDecoder(MarkovKernel):
     def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
