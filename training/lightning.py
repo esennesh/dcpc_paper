@@ -148,6 +148,21 @@ class LightningPpc(L.LightningModule):
             return graph(B=data.shape[0], lr=self.lr, mode=mode,
                          P=self.num_particles)
 
+    @torch.no_grad()
+    def test_step(self, batch, batch_idx):
+        data, _, indices = batch
+        self.graph.clear()
+        trace, log_weight = self.ppc_step(data)
+        self.graph.clear()
+
+        metrics = {
+            "ess": metric.ess(trace, log_weight),
+            "log_joint": metric.log_joint(trace, log_weight),
+            "log_marginal": metric.log_marginal(trace, log_weight),
+            "loss": -utils.logmeanexp(log_weight, dim=0).mean()
+        }
+        return metrics
+
     def training_step(self, batch, batch_idx):
         data, _, indices = batch
         self._load_particles(indices, train=True)
