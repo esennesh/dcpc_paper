@@ -1,9 +1,11 @@
 {
-    "name": "BouncingMnist_Ppc",
+    "name": "MiniBouncingMnist_Ppc",
 
     "arch": {
         "type": "BouncingMnistPpc",
-        "args": {}
+        "args": {
+            "mnist_mean": "data/bmnist/mnist_mean.npy"
+        }
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
@@ -16,10 +18,10 @@
         }
     },
     "data_module": {
-        "type": "BouncingMnistDataModule",
+        "type": "MiniBouncingMnistDataModule",
         "args": {
             "data_dir": "data/",
-            "batch_size": 448
+            "batch_size": 64
         }
     },
     "lmodule": {
@@ -27,7 +29,7 @@
         "args": {
             "cooldown": 50,
             "factor": 0.9,
-            "lr": 0.001,
+            "lr": 0.01,
             "num_particles": 10,
             "num_sweeps": 1,
             "patience": 100
@@ -41,7 +43,7 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": -1,
+          "devices": 1,
           "max_epochs": 1000,
           "min_epochs": 1
         }

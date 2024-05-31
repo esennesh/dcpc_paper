@@ -1,20 +1,31 @@
+from abc import abstractmethod
 from contextlib import contextmanager
+from denoising_diffusion_pytorch import Unet
+from denoising_diffusion_pytorch.simple_diffusion import UViT
 import functools
 import math
 import networkx as nx
+import numpy as np
 import pyro
 import pyro.distributions as dist
 import pyro.nn as pnn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from base import BaseModel, MarkovKernel
+from base import BaseModel, ImportanceModel, MarkovKernel
+from base import MarkovKernelApplication
+from utils.thirdparty import NLVM, ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
-    def __init__(self, num_digits=3, z_where_dim=2):
+    def __init__(self, hidden_dim=10, num_digits=3, z_where_dim=2):
         super().__init__()
         self.register_buffer('loc', torch.zeros(z_where_dim))
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
+        self.dynamics = nn.Sequential(
+            nn.Linear(z_where_dim * num_digits, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, z_where_dim * num_digits)
+        )
         self.batch_shape = ()
         self._num_digits = num_digits
 
@@ -26,9 +37,12 @@ class DigitPositions(MarkovKernel):
         param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         scale = self.scale.expand(param_shape)
         if z_where is None:
-            z_where = self.loc.expand(param_shape)
+            loc = self.loc.expand(param_shape)
             scale = scale * 5
-        return dist.Normal(z_where, scale).to_event(2)
+        else:
+            P, B, K, D = z_where.shape
+            loc = self.dynamics(z_where.view(P, B, K * D)).view(P, B, K, D)
+        return dist.Normal(loc, scale).to_event(2)
 
 class DigitFeatures(MarkovKernel):
     def __init__(self, num_digits=3, z_what_dim=10):
@@ -47,7 +61,8 @@ class DigitFeatures(MarkovKernel):
         return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
 
 class DigitsDecoder(MarkovKernel):
-    def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10):
+    def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10,
+                 mnist_mean=None):
         super().__init__()
         self.batch_shape = ()
         self._digit_side = digit_side
@@ -59,12 +74,14 @@ class DigitsDecoder(MarkovKernel):
         )
         scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
         self.register_buffer('scale', scale)
+
         self.translate = (x_side - digit_side) / digit_side
+        self._digits = {}
 
     def blit(self, digits, z_where):
         P, B, K, _ = z_where.shape
         affine_p1 = self.scale.repeat(P, B, K, 1, 1)
-        affine_p2 = z_where.unsqueeze(-1) * self.translate
+        affine_p2 = soft_clamp(z_where.unsqueeze(-1) * self.translate, -1, 1)
         affine_p2[:, :, :, 0, :] = -affine_p2[:, :, :, 0, :]
         grid = F.affine_grid(
             torch.cat((affine_p1, affine_p2), -1).view(P*B*K, 2, 3),
@@ -83,9 +100,13 @@ class DigitsDecoder(MarkovKernel):
 
     def forward(self, what, where) -> dist.Distribution:
         P, B, K, _ = where.shape
-        digits = self.decoder(what)
-        frame = torch.clamp(self.blit(digits, where).sum(-3), 0., 1.)
-        return dist.ContinuousBernoulli(frame).to_event(2)
+        if what not in self._digits:
+            self._digits = {
+                what: self.decoder(what)
+            }
+        digits = self._digits[what]
+        frames = soft_clamp(self.blit(digits, where).sum(dim=-3), 0., 1.)
+        return dist.ContinuousBernoulli(frames).to_event(2)
 
 class DigitDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
@@ -109,12 +130,16 @@ class DigitDecoder(MarkovKernel):
         return dist.ContinuousBernoulli(estimate).to_event(3)
 
 class GaussianPrior(MarkovKernel):
-    def __init__(self, out_dim):
+    def __init__(self, out_dim, train_params=True):
         super().__init__()
         self.batch_shape = ()
 
-        self.loc = nn.Parameter(torch.zeros(out_dim))
-        self.covariance = nn.Parameter(torch.eye(out_dim))
+        if train_params:
+            self.loc = nn.Parameter(torch.zeros(out_dim))
+            self.covariance = nn.Parameter(torch.eye(out_dim))
+        else:
+            self.register_buffer("loc", torch.zeros(out_dim))
+            self.register_buffer("covariance", torch.eye(out_dim))
 
     @property
     def event_dim(self):
@@ -141,11 +166,67 @@ class ConditionalGaussian(MarkovKernel):
         return 1
 
     def forward(self, hs: torch.Tensor) -> dist.Distribution:
-        P, B, _ = hs.shape
+        scale = torch.tril(self.covariance).expand(*self.batch_shape,
+                                                   *self.covariance.shape)
+        return dist.MultivariateNormal(self.decoder(hs), scale_tril=scale)
 
-        cov = self.covariance.expand(P, B, *self.covariance.shape)
-        return dist.MultivariateNormal(self.decoder(hs),
-                                       scale_tril=torch.tril(self.covariance))
+class GaussianSsm(MarkovKernel):
+    def __init__(self, z_dim, u_dim=0, nonlinearity=nn.Identity):
+        super().__init__()
+        self.batch_shape = ()
+
+        self._u_dim = u_dim
+        if u_dim:
+            self.control_dynamics = nn.Sequential(
+                nonlinearity(), nn.Linear(u_dim, z_dim, bias=False)
+            )
+        self.covariance = nn.Parameter(torch.eye(z_dim))
+        self.state_dynamics = nn.Sequential(
+            nonlinearity(), nn.Linear(z_dim, z_dim, bias=False)
+        )
+
+    @property
+    def event_dim(self):
+        return 1
+
+    def forward(self, z: torch.Tensor, u=None) -> dist.Distribution:
+        assert (self._u_dim > 0) == (u is not None)
+
+        scale = torch.tril(self.covariance).expand(*self.batch_shape,
+                                                   *self.covariance.shape)
+        z_next = self.state_dynamics(z)
+        if self._u_dim:
+            z_next = z_next + self.control_dynamics(u)
+        return dist.MultivariateNormal(z_next, scale_tril=scale)
+
+class GaussianEmission(MarkovKernel):
+    def __init__(self, z_dim, x_dim, u_dim=0, nonlinearity=nn.Identity):
+        super().__init__()
+        self.batch_shape = ()
+
+        self._u_dim = u_dim
+        if u_dim:
+            self.control_emission = nn.Sequential(
+                nonlinearity(), nn.Linear(u_dim, x_dim, bias=False)
+            )
+        self.covariance = nn.Parameter(torch.eye(x_dim))
+        self.emission = nn.Sequential(
+            nonlinearity(), nn.Linear(z_dim, x_dim, bias=False)
+        )
+
+    @property
+    def event_dim(self):
+        return 1
+
+    def forward(self, z: torch.Tensor, u=None) -> dist.Distribution:
+        assert (self._u_dim > 0) == (u is not None)
+
+        scale = torch.tril(self.covariance).expand(*self.batch_shape,
+                                                   *self.covariance.shape)
+        x = self.emission(z)
+        if self._u_dim:
+            x = x + self.control_emission(u)
+        return dist.MultivariateNormal(x, scale_tril=scale)
 
 class MlpBernoulliLikelihood(MarkovKernel):
     def __init__(self, in_dim, out_shape, nonlinearity=nn.ReLU):
@@ -166,7 +247,114 @@ class MlpBernoulliLikelihood(MarkovKernel):
         logits = self.decoder(hs).view(P, B, 1, *self._out_shape)
         return dist.ContinuousBernoulli(logits=logits).to_event(self.event_dim)
 
-class GraphicalModel(BaseModel, pnn.PyroModule):
+class DiffusionPrior(MarkovKernel):
+    def __init__(self, channels=3, img_side=128):
+        super().__init__()
+        self.batch_shape = ()
+        self.register_buffer('loc', torch.zeros(channels, img_side, img_side))
+        self.register_buffer('scale', torch.ones(channels, img_side, img_side))
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self) -> dist.Distribution:
+        loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
+        scale = self.scale.expand(*self.batch_shape, *self.scale.shape)
+        return dist.Normal(loc, scale).to_event(3)
+
+class DiffusionStep(MarkovKernel):
+    def __init__(self, betas, x_side=128, unet="Unet", dim_mults=(1, 2, 4, 8),
+                 flash_attn=True, hidden_dim=64):
+        super().__init__()
+        self.batch_shape = ()
+        self.register_buffer('betas', betas.to(dtype=torch.float))
+        self.register_buffer('alphas', 1. - self.betas)
+        self.register_buffer('alpha_bars', torch.cumprod(self.alphas, dim=0))
+
+        if unet == "Unet":
+            self.unet = Unet(dim=hidden_dim, dim_mults=dim_mults,
+                             flash_attn=flash_attn)
+        elif unet == "UViT":
+            self.unet = UViT(x_side, out_dim=3, channels=3,
+                             dim_mults=dim_mults)
+        else:
+            self.unet = ScoreNetwork0(x_side)
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self, xs_prev: torch.Tensor, t=0) -> dist.Distribution:
+        P, B, C, W, H = xs_prev.shape
+        score = self.unet(xs_prev.view(P*B, C, W, H),
+                          torch.tensor(t, device=xs_prev.device,
+                                       dtype=torch.long).repeat(P*B))
+        score = score.view(*xs_prev.shape)
+        beta = self.betas[t]
+        alpha, alpha_bar = self.alphas[t], self.alpha_bars[t]
+        loc = 1/alpha.sqrt() * (xs_prev -
+                                (beta / (1. - alpha_bar).sqrt()) * score)
+        return dist.Normal(loc, beta).to_event(3)
+
+class ConvolutionalDecoder(MarkovKernel):
+    def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
+        super().__init__()
+        self.batch_shape = ()
+        self._channels = channels
+        self._img_side = img_side
+
+        self.linear = nn.Sequential(nn.Linear(z_dim, hidden_dim), nn.SiLU())
+        self.convs = nn.Sequential(
+            nn.ConvTranspose2d(hidden_dim, 64, 4, 1, 0), nn.SiLU(),
+            nn.ConvTranspose2d(64, 64, 4, 2, 1), nn.SiLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.SiLU(),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side in [64, 128] else
+            (nn.ConvTranspose2d(32, 32, 3, 1, 0) if img_side == 28 else
+             nn.ConvTranspose2d(32, 32, 3, 1, 1)),
+            nn.SiLU(),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 128 else\
+                nn.ConvTranspose2d(32, channels, 4, 2, 1),
+            nn.SiLU() if img_side == 128 else nn.Identity(),
+            nn.ConvTranspose2d(32, channels, 4, 2, 1) if img_side == 128 else nn.Identity(),
+        )
+        self.log_scale = nn.Parameter(torch.zeros(()))
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self, zs: torch.Tensor) -> dist.Distribution:
+        P, B, _ = zs.shape
+        hs = self.linear(zs)
+        hs = hs.view(P*B, *hs.shape[2:], 1, 1)
+        hs = self.convs(hs).view(P, B, self._channels, self._img_side,
+                                 self._img_side)
+        return dist.Normal(F.sigmoid(hs),
+                           self.log_scale.exp() + 1e-4).to_event(3)
+
+class FixedVarianceDecoder(MarkovKernel):
+    def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
+        super().__init__()
+        self.batch_shape = ()
+        self._channels = channels
+        self._img_side = img_side
+
+        self.likelihood_scale = scale
+        self.mean_network = NLVM(z_dim, channels, nonlinearity=F.sigmoid)
+
+    @property
+    def event_dim(self):
+        return 3
+
+    def forward(self, zs: torch.Tensor) -> dist.Distribution:
+        P, B, _ = zs.shape
+        loc = self.mean_network(zs.view(P*B, -1)).view(P, B, self._channels,
+                                                       self._img_side,
+                                                       self._img_side)
+        return dist.Normal(loc, self.likelihood_scale).to_event(3)
+
+class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def __init__(self):
         super().__init__()
         self._graph = nx.DiGraph()
@@ -181,6 +369,7 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         return self._graph.successors(site)
 
     def clamp(self, site, value):
+        assert value is not None
         self.nodes[site]['is_observed'] = True
         return self.update(site, value)
 
@@ -188,18 +377,38 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
         for site in self.nodes:
             self.unclamp(site)
 
-    def forward(self):
+    @contextmanager
+    def condition(self, **kwargs):
+        kwargs = {k: v for (k, v) in kwargs.items() if torch.is_tensor(v)}
+        try:
+            for k, v in kwargs.items():
+                self.clamp(k, v)
+            yield self
+        finally:
+            for k in kwargs:
+                self.unclamp(k)
+
+    @abstractmethod
+    def conditioner(self, data):
+        raise NotImplementedError
+
+    def model(self, **kwargs):
         results = ()
+
         for site, kernel in self.sweep():
             density = kernel(*self.parent_vals(site))
-            self.update(site, pyro.sample(site, density))
+            obs = self.nodes[site]['value'] if self.nodes[site]['is_observed']\
+                  else None
+            self.update(site, pyro.sample(site, density, obs=obs).detach())
 
             if len(list(self.child_sites(site))) == 0:
                 results = results + (self.nodes[site]['value'],)
         return results[0] if len(results) == 1 else results
 
     def kernel(self, site):
-        return self.nodes[site]['kernel']
+        apply = self.nodes[site]['kernel']
+        return functools.partial(getattr(self, apply.kernel), *apply.args,
+                                 **apply.kwargs)
 
     def log_prob(self, site, value, *args, **kwargs):
         density = self.kernel(site)(*args, **kwargs)
@@ -241,14 +450,3 @@ class GraphicalModel(BaseModel, pnn.PyroModule):
     def update(self, site, value):
         self.nodes[site]['value'] = value
         return self.nodes[site]['value']
-
-@contextmanager
-def clamp_graph(graph, **kwargs):
-    try:
-        for k, v in kwargs.items():
-            graph.clamp(k, v)
-        with pyro.condition(data=kwargs):
-            yield graph
-    finally:
-        for k in kwargs:
-            graph.update(k, None)

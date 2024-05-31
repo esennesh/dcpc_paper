@@ -1,36 +1,39 @@
 {
-    "name": "BouncingMnist_Ppc",
+    "name": "Heteroskedastic_CelebA_Ppc",
 
     "arch": {
-        "type": "BouncingMnistPpc",
-        "args": {}
+        "type": "GeneratorPpc",
+        "args": {
+            "heteroskedastic": true,
+            "z_dim": 40
+        }
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
         "args": {
             "auto_insert_metric_name": false,
-            "every_n_epochs": 10,
+            "every_n_epochs": 5,
             "filename": "checkpoint_{epoch}",
             "mode": "min",
             "monitor": "valid/loss"
         }
     },
     "data_module": {
-        "type": "BouncingMnistDataModule",
-        "args": {
+        "type": "CelebADataModule",
+        "args":{
             "data_dir": "data/",
-            "batch_size": 448
+            "batch_size": 2048
         }
     },
     "lmodule": {
         "type": "LightningPpc",
         "args": {
-            "cooldown": 50,
+            "cooldown": 10,
             "factor": 0.9,
-            "lr": 0.001,
-            "num_particles": 10,
-            "num_sweeps": 1,
-            "patience": 100
+            "lr": 1e-3,
+            "num_particles": 4,
+            "num_sweeps": 2,
+            "patience": 50
         }
     },
     "logger": {
@@ -42,7 +45,7 @@
         "args": {
           "default_root_dir": "saved/",
           "devices": -1,
-          "max_epochs": 1000,
+          "max_epochs": 4500,
           "min_epochs": 1
         }
     }

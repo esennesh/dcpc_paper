@@ -1,9 +1,14 @@
 {
-    "name": "BouncingMnist_Ppc",
+    "name": "FlowersDiffusion_Ppc",
 
     "arch": {
-        "type": "BouncingMnistPpc",
-        "args": {}
+        "type": "DiffusionPpc",
+        "args": {
+            "flash_attn": true,
+            "hidden_dim": 32,
+            "T": 100,
+            "unet": false
+        }
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
@@ -16,10 +21,11 @@
         }
     },
     "data_module": {
-        "type": "BouncingMnistDataModule",
-        "args": {
+        "type": "Flowers102DataModule",
+        "args":{
             "data_dir": "data/",
-            "batch_size": 448
+            "batch_size": 50,
+            "side": 64
         }
     },
     "lmodule": {
@@ -27,9 +33,10 @@
         "args": {
             "cooldown": 50,
             "factor": 0.9,
-            "lr": 0.001,
-            "num_particles": 10,
+            "lr": 1e-6,
+            "num_particles": 2,
             "num_sweeps": 1,
+            "online": true,
             "patience": 100
         }
     },

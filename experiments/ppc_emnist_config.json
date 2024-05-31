@@ -1,36 +1,36 @@
 {
-    "name": "BouncingMnist_Ppc",
+    "name": "EMnist_Ppc",
 
     "arch": {
-        "type": "BouncingMnistPpc",
+        "type": "MnistPpc",
         "args": {}
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
         "args": {
             "auto_insert_metric_name": false,
-            "every_n_epochs": 10,
+            "every_n_epochs": 100,
             "filename": "checkpoint_{epoch}",
             "mode": "min",
             "monitor": "valid/loss"
         }
     },
     "data_module": {
-        "type": "BouncingMnistDataModule",
-        "args": {
+        "type": "EMnistDataModule",
+        "args":{
             "data_dir": "data/",
-            "batch_size": 448
+            "batch_size": 6144
         }
     },
     "lmodule": {
         "type": "LightningPpc",
         "args": {
-            "cooldown": 50,
+            "cooldown": 10,
             "factor": 0.9,
-            "lr": 0.001,
-            "num_particles": 10,
+            "lr": 0.01,
+            "num_particles": 2,
             "num_sweeps": 1,
-            "patience": 100
+            "patience": 50
         }
     },
     "logger": {
@@ -41,8 +41,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": -1,
-          "max_epochs": 1000,
+          "devices": 1,
+          "max_epochs": 2000,
           "min_epochs": 1
         }
     }

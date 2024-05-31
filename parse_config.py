@@ -23,7 +23,7 @@ class ConfigParser:
         self.resume = resume
 
         # set save_dir where trained model and log will be saved.
-        save_dir = Path(self.config['trainer']['save_dir'])
+        save_dir = Path(self.config['trainer']['args']['default_root_dir'])
 
         exper_name = self.config['name']
         if run_id is None: # use timestamp as default run-id
@@ -32,9 +32,8 @@ class ConfigParser:
         self._log_dir = save_dir / 'log' / exper_name / run_id
 
         # make directory for saving checkpoints and log.
-        exist_ok = run_id == ''
-        self.save_dir.mkdir(parents=True, exist_ok=exist_ok)
-        self.log_dir.mkdir(parents=True, exist_ok=exist_ok)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # save updated config file to the checkpoint dir
         write_json(self.config, self.save_dir / 'config.json')
@@ -59,15 +58,11 @@ class ConfigParser:
 
         if args.device is not None:
             os.environ["CUDA_VISIBLE_DEVICES"] = args.device
-        if args.resume is not None:
-            resume = Path(args.resume)
-            cfg_fname = resume.parent / 'config.json'
-        else:
-            msg_no_cfg = "Configuration file need to be specified. Add '-c config.json', for example."
-            assert args.config is not None, msg_no_cfg
-            resume = None
-            cfg_fname = Path(args.config)
-        
+        resume = Path(args.resume) if args.resume is not None else None
+        msg_no_cfg = "Configuration file need to be specified. Add '-c config.json', for example."
+        assert args.config is not None, msg_no_cfg
+        cfg_fname = Path(args.config)
+
         config = read_json(cfg_fname)
         if args.config and resume:
             # update new config for fine-tuning

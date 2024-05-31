@@ -7,6 +7,7 @@ import torch
 import torch.distributions.constraints as constraints
 from torch.distributions import biject_to, transform_to
 import torch.nn as nn
+import torch.nn.functional as F
 
 import pyro
 import pyro.distributions as dist
@@ -22,9 +23,22 @@ from base import BaseModel
 from .generative import GraphicalModel
 import utils
 
+def systematic_resample(log_weights):
+    P, B = log_weights.shape
+
+    positions = (torch.rand((B, P), device=log_weights.device) +\
+                 torch.arange(P, device=log_weights.device).unsqueeze(0)) / P
+    weights = F.softmax(log_weights, dim=0)
+    cumsums = torch.cumsum(weights.transpose(0, 1), dim=1)
+    (normalizers, _) = torch.max(input=cumsums, dim=1, keepdim=True)
+    cumsums = cumsums / normalizers ## B * S
+
+    index = torch.searchsorted(cumsums, positions).transpose(0, 1)
+    assert index.shape == (P, B), "ERROR! systematic resampling resulted unexpected index shape."
+    return torch.where(index >= P - 1, torch.zeros_like(index), index)
+
 def _resample(log_weights, estimate_normalizer=False):
-    discrete = dist.Categorical(logits=torch.swapaxes(log_weights, 0, -1))
-    indices = discrete.sample(sample_shape=torch.Size([log_weights.shape[0]]))
+    indices = systematic_resample(log_weights)
     if estimate_normalizer:
         log_normalizer = utils.logmeanexp(log_weights)
         return indices, log_normalizer
@@ -50,32 +64,27 @@ class ParticleDict(nn.ParameterDict):
     def num_particles(self):
         return self._num_particles
 
-    def get_particles(self, key: str, idx: Sequence[int]) -> torch.Tensor:
+    def get_particles(self, key: str, idx: torch.LongTensor) -> torch.Tensor:
         val = self[key]
         assert val.shape[self._batch_dim] == self.num_data
         assert val.shape[self._particle_dim] == self.num_particles
-        return torch.index_select(val, self._batch_dim,
-                                  torch.LongTensor(idx).to(val.device))
+        val = torch.index_select(val, self._batch_dim, idx.to(val.device))
+        return val.to(idx.device)
 
-    def set_particles(self, key: str, idx: Sequence[int], val: torch.Tensor):
+    def set_particles(self, key: str, idx: torch.LongTensor, val: torch.Tensor):
         assert val.shape[self._particle_dim] == self.num_particles
         if key not in self:
             shape = list(val.shape)
             shape[self._batch_dim] = self.num_data
             self[key] = torch.zeros(*shape)
         with torch.no_grad():
-            indices = torch.LongTensor(idx).view(
-                (1,) * self._batch_dim + (len(idx),) +\
-                (1,) * len(val.shape[self._batch_dim+1:])
-            ).to(self[key].device)
+            indices = idx.view((1,) * self._batch_dim + (len(idx),) +\
+                               (1,) * len(val.shape[self._batch_dim+1:]))
+            indices = indices.to(self[key].device)
             self[key].scatter_(self._batch_dim, indices.expand(val.shape),
                                val.to(self[key].device))
 
 class PpcGraphicalModel(GraphicalModel):
-    def __init__(self, temperature=1e-3):
-        self._temperature = temperature
-        super().__init__()
-
     def _complete_conditional_error(self, site):
         error = self._site_errors(site)[0]
         for child in self.child_sites(site):
@@ -102,32 +111,34 @@ class PpcGraphicalModel(GraphicalModel):
         return self.nodes[site]['errors']
 
     @torch.no_grad()
-    def get_posterior(self, name: str, event_dim: int) -> Distribution:
+    def get_posterior(self, name: str, event_dim: int, lr=1e-3, mode=None):
         z = self.nodes[name]['value']
         error = self._complete_conditional_error(name)
-        proposal = dist.Normal(z + self.temperature * error,
-                               math.sqrt(2*self.temperature))
+
+        proposal = dist.Normal(z + lr * error, math.sqrt(2 * lr))
         proposal = proposal.to_event(event_dim)
-        z_next = proposal.sample()
+        if mode == "online":
+            return proposal
+        else:
+            z_next = proposal.sample()
 
-        log_cc = self.log_complete_conditional(name, z_next)
-        log_proposal = proposal.log_prob(z_next)
-        particle_indices, log_Zcc = _resample(log_cc - log_proposal,
-                                              estimate_normalizer=True)
-        z_next = _ancestor_index(particle_indices, z_next)
-        log_cc = _ancestor_index(particle_indices, log_cc)
+            log_cc = self.log_complete_conditional(name, z_next)
+            log_proposal = proposal.log_prob(z_next)
+            particle_indices, log_Zcc = _resample(log_cc - log_proposal,
+                                                  estimate_normalizer=True)
+            z_next = _ancestor_index(particle_indices, z_next)
+            log_cc = _ancestor_index(particle_indices, log_cc)
 
-        self.nodes[name]['errors'] = None
-        for child in self.child_sites(name):
-            self.nodes[child]['errors'] = None
+            return dist.Delta(z_next, log_cc - log_Zcc, event_dim=event_dim)
 
-        return dist.Delta(z_next, log_cc - log_Zcc, event_dim=event_dim)
-
-    def guide(self):
+    def guide(self, lr=1e-3, mode=None, **kwargs):
         results = ()
         for site, kernel in self.sweep(forward=False):
+            if site in kwargs and kwargs[site] is not None:
+                self.clamp(site, kwargs[site])
             if not self.nodes[site]["is_observed"]:
-                posterior = self.get_posterior(site, kernel.event_dim)
+                posterior = self.get_posterior(site, kernel.func.event_dim,
+                                               lr=lr, mode=mode)
                 self.update(site, pyro.sample(site, posterior))
 
             if len(list(self.child_sites(site))) == 0:
@@ -145,9 +156,11 @@ class PpcGraphicalModel(GraphicalModel):
                                                     *args)
         return log_sitecc
 
-    @property
-    def temperature(self):
-        return self._temperature
+    def update(self, site, value):
+        self.nodes[site]['errors'] = None
+        for child in self.child_sites(site):
+            self.nodes[child]['errors'] = None
+        return super().update(site, value)
 
 def dist_params(dist: Distribution):
     return {k: v for k, v in dist.__dict__.items() if k[0] != '_'}
@@ -247,7 +260,4 @@ _msngrs = [
     AsviMessenger,
 ]
 
-for _msngr_cls in _msngrs:
-    _handler_name, _handler = _make_handler(_msngr_cls)
-    _handler.__module__ = __name__
-    locals()[_handler_name] = _handler
+locals()["asvi"] = _make_handler(AsviMessenger, __name__)
