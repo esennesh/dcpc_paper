@@ -424,6 +424,10 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
     def parent_vals(self, site):
         return tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
 
+    def predict(self, *args, B=1, P=1, **kwargs):
+        with self.condition(**kwargs) as conditioned:
+            return conditioned.forward(*args, B=B, mode="prior", P=P)
+
     @functools.cached_property
     def stochastic_nodes(self):
         return [site for site in self.nodes
