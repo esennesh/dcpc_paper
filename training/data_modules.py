@@ -1,3 +1,4 @@
+from functools import cache
 import lightning as L
 import numpy as np
 import os
@@ -259,17 +260,20 @@ class CelebADataModule(L.LightningDataModule):
                                                download=True,
                                                transform=self.transform)
 
+    @cache
     def test_dataloader(self):
         return DataLoader(IndexedDataset(self.celeba_test), num_workers=2,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
+    @cache
     def train_dataloader(self):
         return DataLoader(IndexedDataset(self.celeba_train), num_workers=2,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
+    @cache
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.celeba_val), num_workers=2,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
 class Flowers102DataModule(L.LightningDataModule):
     def __init__(self, data_dir, batch_size, side=64):
