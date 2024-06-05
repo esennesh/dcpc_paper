@@ -5,6 +5,7 @@ import numpy as np
 import pyro
 from pyro.infer import Importance, Predictive, SVI, JitTraceGraph_ELBO, TraceGraph_ELBO
 import torch
+import torchmetrics
 from torchvision.utils import make_grid
 from model import metric
 from model.inference import ParticleDict, PpcGraphicalModel
@@ -147,6 +148,37 @@ class LightningPpc(L.LightningModule):
                       P=self.num_particles)
             return graph(B=data.shape[0], lr=self.lr, mode=mode,
                          P=self.num_particles)
+
+    @torch.no_grad()
+    def test_step(self, batch, batch_idx):
+        data, _, indices = batch
+        self.graph.clear()
+        with self.graph.condition(**self.graph.conditioner(data)) as graph:
+            graph(B=data.shape[0], mode="prior", P=self.num_particles)
+        trace, log_weight = self.ppc_step(data)
+        self.graph.clear()
+
+        metrics = {
+            "ess": metric.ess(trace, log_weight),
+            "log_joint": metric.log_joint(trace, log_weight),
+            "log_marginal": metric.log_marginal(trace, log_weight),
+            "loss": -utils.logmeanexp(log_weight, dim=0).mean()
+        }
+        if len(self.data.dims) == 3 and self.data.dims[0] == 3:
+            fid = torchmetrics.image.fid.FrechetInceptionDistance(
+                input_img_size=self.data.dims, normalize=True
+            ).set_dtype(torch.float64).to(device=data.device)
+            fid.update(data, real=True)
+
+            posterior = {k: torch.cat((v, self.particles["valid"][k]), dim=1)
+                            for k, v in self.particles["train"].items()}
+            B = len(data) // self.num_particles
+            imgs = self.graph.predict(B=B, P=self.num_particles, **posterior)
+            imgs = imgs.view(B*self.num_particles, *self.data.dims)
+            fid.update(imgs, real=False)
+            metrics["fid"] = fid.compute()
+
+        return metrics
 
     def training_step(self, batch, batch_idx):
         data, _, indices = batch
