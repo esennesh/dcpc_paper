@@ -187,7 +187,11 @@ class LightningPpc(L.LightningModule):
         data, _, indices = batch
         self._load_particles(indices, train=True)
         trace, log_weight = self.ppc_step(data)
-        loss = -utils.logmeanexp(log_weight, dim=0).mean()
+        if self.resampling:
+            loss = utils.logmeanexp(log_weight, dim=0)
+        else:
+            loss = log_weight
+        loss = -loss.mean()
         self._save_particles(indices, train=True)
 
         self.log("train/ess", metric.ess(trace, log_weight.detach()))
@@ -202,7 +206,11 @@ class LightningPpc(L.LightningModule):
         data, _, indices = batch
         self._load_particles(indices, train=False)
         trace, log_weight = self.ppc_step(data)
-        loss = -utils.logmeanexp(log_weight, dim=0).mean()
+        if self.resampling:
+            loss = utils.logmeanexp(log_weight, dim=0)
+        else:
+            loss = log_weight
+        loss = -loss.mean()
         self._save_particles(indices, train=False)
 
         self.log("valid/ess", metric.ess(trace, log_weight.detach()),
