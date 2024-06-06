@@ -1,4 +1,3 @@
-from functools import cache
 import lightning as L
 import numpy as np
 import os
@@ -232,12 +231,13 @@ class CelebADataModule(L.LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
         self.data_dir = data_dir
-        self.reverse_transform = transforms.Lambda(lambda t: t.mT)
+        self.reverse_transform = transforms.Normalize((-1, -1, -1), (2, 2, 2))
         self.transform = transforms.Compose([
             transforms.Resize(side),
             transforms.CenterCrop(side),
             transforms.ToTensor(),
             transforms.Lambda(lambda t: t.mT),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
         self.dims = (3, side, side)
 
@@ -260,17 +260,14 @@ class CelebADataModule(L.LightningDataModule):
                                                download=True,
                                                transform=self.transform)
 
-    @cache
     def test_dataloader(self):
         return DataLoader(IndexedDataset(self.celeba_test), num_workers=2,
                           batch_size=self.batch_size, pin_memory=True)
 
-    @cache
     def train_dataloader(self):
         return DataLoader(IndexedDataset(self.celeba_train), num_workers=2,
                           batch_size=self.batch_size, pin_memory=True)
 
-    @cache
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.celeba_val), num_workers=2,
                           batch_size=self.batch_size, pin_memory=True)
