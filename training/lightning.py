@@ -169,13 +169,15 @@ class LightningPpc(L.LightningModule):
             fid = torchmetrics.image.fid.FrechetInceptionDistance(
                 input_img_size=self.data.dims, normalize=True
             ).set_dtype(torch.float64).to(device=data.device)
+            data = self.data.reverse_transform(data)
             fid.update(data, real=True)
 
             posterior = {k: torch.cat((v, self.particles["valid"][k]), dim=1)
                             for k, v in self.particles["train"].items()}
             B = len(data) // self.num_particles
             imgs = self.graph.predict(B=B, P=self.num_particles, **posterior)
-            imgs = imgs.view(B*self.num_particles, *self.data.dims)
+            imgs = self.data.reverse_transform(imgs.view(B*self.num_particles,
+                                                         *self.data.dims))
             fid.update(imgs, real=False)
             metrics["fid"] = fid.compute()
 
