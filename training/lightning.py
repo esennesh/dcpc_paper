@@ -69,14 +69,15 @@ class LightningPpc(L.LightningModule):
     Lightning module for Population Predictive Coding (PPC)
     """
     def __init__(self, graph: PpcGraphicalModel, data: L.LightningDataModule,
-                 cooldown=50, factor=0.9, lr=1e-3, num_particles=4,
+                 cooldown=50, factor=0.9, lrp=1e-3, lrq=1e-3, num_particles=4,
                  num_sweeps=1, patience=100, resampling=True):
         super().__init__()
         self.save_hyperparameters(ignore=["data", "graph"])
         self.cooldown = cooldown
         self.data = data
         self.factor = factor
-        self.lr = lr
+        self.lrp = lrp
+        self.lrq = lrq
         self.graph = graph
         self.num_particles = num_particles
         self.num_sweeps = num_sweeps
@@ -102,7 +103,7 @@ class LightningPpc(L.LightningModule):
     def _initialize_particles(self, batch, batch_idx, train=True):
         data, target, indices = batch
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
-            graph(lr=self.lr, B=data.shape[0], mode="prior",
+            graph(lr=self.lrq, B=data.shape[0], mode="prior",
                   P=self.num_particles)
             self._save_particles(indices, train)
 
@@ -123,7 +124,7 @@ class LightningPpc(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.graph.parameters(), amsgrad=True,
-                                     lr=self.lr, weight_decay=0.)
+                                     lr=self.lrp, weight_decay=0.)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, cooldown=self.cooldown, factor=self.factor,
             patience=self.patience
@@ -144,9 +145,9 @@ class LightningPpc(L.LightningModule):
         mode = "online" if not self.resampling else None
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             for _ in range(self.num_sweeps - 1):
-                graph(B=data.shape[0], lr=self.lr, mode=mode,
+                graph(B=data.shape[0], lr=self.lrq, mode=mode,
                       P=self.num_particles)
-            return graph(B=data.shape[0], lr=self.lr, mode=mode,
+            return graph(B=data.shape[0], lr=self.lrq, mode=mode,
                          P=self.num_particles)
 
     @torch.no_grad()
@@ -168,13 +169,15 @@ class LightningPpc(L.LightningModule):
             fid = torchmetrics.image.fid.FrechetInceptionDistance(
                 input_img_size=self.data.dims, normalize=True
             ).set_dtype(torch.float64).to(device=data.device)
+            data = self.data.reverse_transform(data)
             fid.update(data, real=True)
 
             posterior = {k: torch.cat((v, self.particles["valid"][k]), dim=1)
                             for k, v in self.particles["train"].items()}
             B = len(data) // self.num_particles
             imgs = self.graph.predict(B=B, P=self.num_particles, **posterior)
-            imgs = imgs.view(B*self.num_particles, *self.data.dims)
+            imgs = self.data.reverse_transform(imgs.view(B*self.num_particles,
+                                                         *self.data.dims))
             fid.update(imgs, real=False)
             metrics["fid"] = fid.compute()
 
@@ -184,7 +187,11 @@ class LightningPpc(L.LightningModule):
         data, _, indices = batch
         self._load_particles(indices, train=True)
         trace, log_weight = self.ppc_step(data)
-        loss = -utils.logmeanexp(log_weight, dim=0).mean()
+        if self.resampling:
+            loss = utils.logmeanexp(log_weight, dim=0)
+        else:
+            loss = log_weight
+        loss = -loss.mean()
         self._save_particles(indices, train=True)
 
         self.log("train/ess", metric.ess(trace, log_weight.detach()))
@@ -199,7 +206,11 @@ class LightningPpc(L.LightningModule):
         data, _, indices = batch
         self._load_particles(indices, train=False)
         trace, log_weight = self.ppc_step(data)
-        loss = -utils.logmeanexp(log_weight, dim=0).mean()
+        if self.resampling:
+            loss = utils.logmeanexp(log_weight, dim=0)
+        else:
+            loss = log_weight
+        loss = -loss.mean()
         self._save_particles(indices, train=False)
 
         self.log("valid/ess", metric.ess(trace, log_weight.detach()),

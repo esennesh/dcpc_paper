@@ -1,5 +1,5 @@
 {
-    "name": "Homoskedastic_CelebA_Pgd",
+    "name": "Homoskedastic_CelebA_Ppc",
 
     "arch": {
         "type": "GeneratorPpc",
@@ -36,7 +36,7 @@
             "num_particles": 10,
             "num_sweeps": 1,
             "patience": 50,
-            "resampling": false
+            "resampling": true
         }
     },
     "logger": {
