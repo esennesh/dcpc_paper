@@ -5,6 +5,7 @@ import numpy as np
 import pyro
 from pyro.infer import Importance, Predictive, SVI, JitTraceGraph_ELBO, TraceGraph_ELBO
 import torch
+import torch.nn.functional as F
 import torchmetrics
 from torchvision.utils import make_grid
 from model import metric
@@ -188,7 +189,8 @@ class LightningPpc(L.LightningModule):
         self._load_particles(indices, train=True)
         trace, log_weight = self.ppc_step(data)
         if self.resampling:
-            loss = utils.logmeanexp(log_weight, dim=0)
+            loss = F.softmax(log_weight, dim=0).detach() * log_weight
+            loss = loss.sum(dim=0)
         else:
             loss = log_weight
         loss = -loss.mean()
@@ -207,7 +209,8 @@ class LightningPpc(L.LightningModule):
         self._load_particles(indices, train=False)
         trace, log_weight = self.ppc_step(data)
         if self.resampling:
-            loss = utils.logmeanexp(log_weight, dim=0)
+            loss = F.softmax(log_weight, dim=0).detach() * log_weight
+            loss = loss.sum(dim=0)
         else:
             loss = log_weight
         loss = -loss.mean()
