@@ -299,7 +299,7 @@ class DiffusionStep(MarkovKernel):
 
 class ConvolutionalDecoder(MarkovKernel):
     def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64,
-                 nonlinearity=nn.Sigmoid):
+                 nonlinearity=nn.Tanh):
         super().__init__()
         self.batch_shape = ()
         self._channels = channels
