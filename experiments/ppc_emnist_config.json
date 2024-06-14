@@ -28,7 +28,7 @@
             "cooldown": 10,
             "factor": 0.9,
             "lrp": 0.01,
-            "lrq": 0.01,
+            "lrq": 0.001,
             "num_particles": 2,
             "num_sweeps": 1,
             "patience": 50
