@@ -22,7 +22,7 @@
         "type": "CelebADataModule",
         "args":{
             "data_dir": "data/",
-            "batch_size": 1024
+            "batch_size": 2048
         }
     },
     "lmodule": {
@@ -31,9 +31,9 @@
             "cooldown": 10,
             "factor": 0.9,
             "lrp": 1e-3,
-            "lrq": 1e-1,
+            "lrq": 1e-4,
             "num_particles": 16,
-            "num_sweeps": 300,
+            "num_sweeps": 1,
             "patience": 50
         }
     },
@@ -46,7 +46,7 @@
         "args": {
           "default_root_dir": "saved/",
           "devices": [7],
-          "max_epochs": 15,
+          "max_epochs": 4500,
           "min_epochs": 1
         }
     }
