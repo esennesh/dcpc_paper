@@ -1,4 +1,5 @@
 import lightning as L
+import glob
 import numpy as np
 import os
 from PIL import Image
@@ -27,10 +28,7 @@ class BouncingMNIST(datasets.VisionDataset):
 
     def _load_data(self):
         data = []
-        for file in os.listdir(self.root):
-            if '.npy' not in file:
-                continue
-            file = os.path.join(self.root, file)
+        for file in glob.glob(self.root + "/ob-*.npy"):
             data.append(torch.from_numpy(np.load(file)).float())
         result = torch.cat(data, dim=0)
         return result
