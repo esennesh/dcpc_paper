@@ -47,10 +47,7 @@ class BouncingMNIST(datasets.VisionDataset):
 class MiniBouncingMNIST(BouncingMNIST):
     def _load_data(self):
         data = []
-        for file in os.listdir(self.root):
-            if '.npy' not in file:
-                continue
-            file = os.path.join(self.root, file)
+        for file in glob.glob(self.root + "/ob-*.npy"):
             data.append(torch.from_numpy(np.load(file)).float())
             break
         result = torch.cat(data, dim=0)
