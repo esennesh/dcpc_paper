@@ -306,28 +306,37 @@ class ConvolutionalDecoder(MarkovKernel):
         self._img_side = img_side
 
         self.linear = nn.Sequential(nn.Linear(z_dim, hidden_dim), nn.SiLU())
-        self.convs = nn.Sequential(
-            nn.ConvTranspose2d(hidden_dim, 64, 4, 1, 0),
-            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
-            nn.ConvTranspose2d(64, 64, 4, 2, 1),
-            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
-            nn.ConvTranspose2d(64, 32, 4, 2, 1),
-            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
-            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side in [64, 128] else
-            (nn.ConvTranspose2d(32, 32, 3, 1, 0) if img_side == 28 else
-             nn.ConvTranspose2d(32, 32, 3, 1, 1)),
-            nn.BatchNorm2d(32, track_running_stats=False),
-            nn.SiLU(),
-            nn.ConvTranspose2d(32, 32, 4, 2, 1) if img_side == 128 else\
+        self.convs = [nn.ConvTranspose2d(hidden_dim, 64, 4, 1, 0),
+                      nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                      nn.ConvTranspose2d(64, 64, 4, 2, 1),
+                      nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                      nn.ConvTranspose2d(64, 32, 4, 2, 1),
+                      nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU()]
+        if img_side in [64, 128]:
+            self.convs.append(nn.ConvTranspose2d(32, 32, 4, 2, 1))
+        elif img_side == 28:
+            self.convs.append(nn.ConvTranspose2d(32, 32, 3, 1, 0))
+        else:
+            self.convs.append(nn.ConvTranspose2d(32, 32, 3, 1, 1))
+        self.convs = self.convs + [
+            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU()
+        ]
+        if img_side == 128:
+            self.convs = self.convs + [
+                nn.ConvTranspose2d(32, 32, 4, 2, 1),
+                nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
                 nn.ConvTranspose2d(32, channels, 4, 2, 1),
-            nn.BatchNorm2d(32, track_running_stats=False) if img_side == 128\
-                else nn.BatchNorm2d(channels, track_running_stats=False),
-            nn.SiLU() if img_side == 128 else nn.Identity(),
-            nn.ConvTranspose2d(32, channels, 4, 2, 1) if img_side == 128 else nn.Identity(),
-            nn.BatchNorm2d(channels, track_running_stats=False)\
-                if img_side == 128 else nn.Identity(),
-            nonlinearity()
-        )
+                nn.BatchNorm2d(channels, track_running_stats=False), nn.SiLU()
+            ]
+        else:
+            self.convs = self.convs + [
+                nn.ConvTranspose2d(32, channels, 4, 2, 1),
+                nn.BatchNorm2d(channels, track_running_stats=False), nn.SiLU()
+            ]
+        self.convs = nn.Sequential(*self.convs,
+                                   nn.Conv2d(channels, channels, kernel_size=3,
+                                             padding=1),
+                                   nonlinearity())
         self.log_scale = nn.Parameter(torch.zeros(()))
 
     @property
