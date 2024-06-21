@@ -72,8 +72,7 @@ class DigitsDecoder(MarkovKernel):
             nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
             nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
         )
-        scale = torch.diagflat(torch.ones(2) * x_side / digit_side)
-        self.register_buffer('scale', scale)
+        self.register_buffer('scale', torch.eye(2) * x_side / digit_side)
 
         self.translate = (x_side - digit_side) / digit_side
         self._digits = {}
@@ -86,12 +85,13 @@ class DigitsDecoder(MarkovKernel):
         grid = F.affine_grid(
             torch.cat((affine_p1, affine_p2), -1).view(P*B*K, 2, 3),
             torch.Size((P*B*K, 1, self._x_side, self._x_side)),
-            align_corners=True
+            align_corners=False
         )
 
         digits = digits.view(P*B*K, self._digit_side, self._digit_side)
-        frames = F.grid_sample(digits.unsqueeze(1), grid, mode='nearest',
-                               align_corners=True).squeeze(1)
+        digits = digits.transpose(-1, -2).unsqueeze(1)
+        frames = F.grid_sample(digits, grid, mode='nearest',
+                               align_corners=False).squeeze(1).transpose(-1, -2)
         return frames.view(P, B, K, self._x_side, self._x_side)
 
     @property
