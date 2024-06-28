@@ -12,7 +12,7 @@
         "type": "ModelCheckpoint",
         "args": {
             "auto_insert_metric_name": false,
-            "every_n_epochs": 5,
+            "every_n_epochs": 100,
             "filename": "checkpoint_{epoch}",
             "mode": "min",
             "monitor": "valid/loss"
@@ -22,7 +22,8 @@
         "type": "CelebADataModule",
         "args":{
             "data_dir": "data/",
-            "batch_size": 2048
+            "batch_size": 64,
+            "num_workers": 4
         }
     },
     "lmodule": {
