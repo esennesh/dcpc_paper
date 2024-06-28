@@ -85,6 +85,10 @@ class ParticleDict(nn.ParameterDict):
                                val.to(self[key].device))
 
 class PpcGraphicalModel(GraphicalModel):
+    def __init__(self, beta=0.99):
+        super().__init__()
+        self._beta = beta
+
     def _complete_conditional_error(self, site):
         error = self._site_errors(site)[0]
         for child in self.child_sites(site):
@@ -114,6 +118,10 @@ class PpcGraphicalModel(GraphicalModel):
             self.nodes[site]['errors'] = self._compute_site_errors(site)
         return self.nodes[site]['errors']
 
+    def add_node(self, site, parents, kernel):
+        super().add_node(site, parents, kernel)
+        self.nodes[site]['momentum'] = 0.
+
     @torch.no_grad()
     def get_posterior(self, name: str, event_dim: int, lr=1e-3):
         z = self.nodes[name]['value']
@@ -121,8 +129,11 @@ class PpcGraphicalModel(GraphicalModel):
             bijector = biject_to(self.nodes[name]['support'])
             z = bijector.inv(z)
         error = self._complete_conditional_error(name)
+        fisher = error.var(dim=0, keepdim=True) + 1 / error.shape[0]
+        prec = 1 / fisher
+        prec = prec / ((1/prec.shape[-1]) * prec.sum(dim=-1, keepdim=True))
 
-        proposal = dist.Normal(z + lr * error, math.sqrt(2 * lr))
+        proposal = dist.Normal(z + lr * prec * error, (2 * lr * prec).sqrt())
         proposal = proposal.to_event(event_dim)
         if self.nodes[name]['support']:
             proposal = dist.TransformedDistribution(proposal, [bijector])
