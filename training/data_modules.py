@@ -222,10 +222,11 @@ class MiniBouncingMnistDataModule(L.LightningDataModule):
                           batch_size=self.batch_size)
 
 class CelebADataModule(L.LightningDataModule):
-    def __init__(self, data_dir, batch_size, side=64):
+    def __init__(self, data_dir, batch_size, num_workers=2, side=64):
         super().__init__()
         self.batch_size = batch_size
         self.data_dir = data_dir
+        self.num_workers = num_workers
         self.reverse_transform = transforms.Normalize((-1, -1, -1), (2, 2, 2))
         self.transform = transforms.Compose([
             transforms.Resize(side),
@@ -256,15 +257,18 @@ class CelebADataModule(L.LightningDataModule):
                                                transform=self.transform)
 
     def test_dataloader(self):
-        return DataLoader(IndexedDataset(self.celeba_test), num_workers=2,
+        return DataLoader(IndexedDataset(self.celeba_test),
+                          num_workers=self.num_workers,
                           batch_size=self.batch_size, pin_memory=True)
 
     def train_dataloader(self):
-        return DataLoader(IndexedDataset(self.celeba_train), num_workers=2,
+        return DataLoader(IndexedDataset(self.celeba_train),
+                          num_workers=self.num_workers,
                           batch_size=self.batch_size, pin_memory=True)
 
     def val_dataloader(self):
-        return DataLoader(IndexedDataset(self.celeba_val), num_workers=2,
+        return DataLoader(IndexedDataset(self.celeba_val),
+                          num_workers=self.num_workers,
                           batch_size=self.batch_size, pin_memory=True)
 
 class Flowers102DataModule(L.LightningDataModule):
