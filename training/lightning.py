@@ -96,9 +96,14 @@ class LightningPpc(L.LightningModule):
             "train": ParticleDict(num_train, self.num_particles),
             "valid": ParticleDict(num_valid, self.num_particles)
         }
+        self.graph.to(self.device)
         for batch_idx, batch in enumerate(self.data.train_dataloader()):
+            batch = (batch[0].to(self.device), batch[1],
+                     batch[2].to(self.device))
             self._initialize_particles(batch, batch_idx)
         for batch_idx, batch in enumerate(self.data.val_dataloader()):
+            batch = (batch[0].to(self.device), batch[1],
+                     batch[2].to(self.device))
             self._initialize_particles(batch, batch_idx, False)
 
     def _initialize_particles(self, batch, batch_idx, train=True):
