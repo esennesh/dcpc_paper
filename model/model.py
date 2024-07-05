@@ -157,8 +157,7 @@ class GeneratorPpc(PpcGraphicalModel):
 
         self.prior = GaussianPrior(z_dim, False)
         if heteroskedastic:
-            self.likelihood = ConvolutionalDecoder(dims[0], z_dim, hidden_dim,
-                                                   dims[-1])
+            self.likelihood = ConvolutionalDecoder(dims[0], z_dim, dims[-1])
         else:
             self.likelihood = FixedVarianceDecoder(dims[0], dims[-1],
                                                    z_dim=z_dim)
