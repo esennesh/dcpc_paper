@@ -22,8 +22,8 @@
         "type": "CelebADataModule",
         "args":{
             "data_dir": "data/",
-            "batch_size": 64,
-            "num_workers": 4
+            "batch_size": 512,
+            "num_workers": 8
         }
     },
     "lmodule": {
