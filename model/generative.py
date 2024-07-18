@@ -304,20 +304,20 @@ class ConvolutionalDecoder(MarkovKernel):
         self._channels = channels
         self._img_side = img_side
 
-        self.linear = nn.Linear(z_dim, 512 * 4)
-        self.convs = [nn.ConvTranspose2d(512, 256, 3, 2, 1, 1),
-                      nn.BatchNorm2d(256, track_running_stats=False), nn.SiLU(),
-                      nn.ConvTranspose2d(256, 128, 3, 2, 1, 1),
-                      nn.BatchNorm2d(128, track_running_stats=False), nn.SiLU(),
-                      nn.ConvTranspose2d(128, 64, 3, 2, 1, 1),
-                      nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
-                      nn.ConvTranspose2d(64, 32, 3, 2, 1, 1),
-                      nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU()]
+        self.linear = nn.Linear(z_dim, 256)
         self.convs = nn.Sequential(
-            *self.convs,
-            nn.ConvTranspose2d(32, 32, 3, 2, 1, 1),
-            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(32, channels, kernel_size=3, padding=1), nonlinearity()
+            # 16x4x4 -> 64x8x8
+            nn.ConvTranspose2d(16, 64, 4, 2, 1), nn.LayerNorm([64, 8, 8]),
+            nn.SiLU(),
+            # 64x8x8 -> 64x16x16
+            nn.ConvTranspose2d(64, 64, 4, 2, 1), nn.LayerNorm([64, 16, 16]),
+            nn.SiLU(),
+            # 64x16x16 -> 32x32x32
+            nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.LayerNorm([32, 32, 32]),
+            nn.SiLU(),
+            # 32x32x32 -> 3x64x64
+            nn.ConvTranspose2d(32, channels, 4, 2, 1),
+            nonlinearity()
         )
         self.log_scale = nn.Parameter(torch.zeros(()))
 
@@ -328,7 +328,7 @@ class ConvolutionalDecoder(MarkovKernel):
     def forward(self, zs: torch.Tensor) -> dist.Distribution:
         P, B, _ = zs.shape
         hs = self.linear(zs)
-        hs = hs.view(P*B, 512, 2, 2)
+        hs = hs.view(P*B, 16, 4, 4)
         hs = self.convs(hs).view(P, B, self._channels, self._img_side,
                                  self._img_side)
         return dist.Normal(hs, self.log_scale.exp() + 1e-4).to_event(3)
