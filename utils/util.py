@@ -7,6 +7,28 @@ from pathlib import Path
 import pyro
 import torch
 
+def deconv2d_padding(input_dim, output_dim, kernel_size, stride):
+    """
+    Calculate the padding and output_padding required for a ConvTranspose layer to achieve the desired output dimension.
+
+    Parameters:
+    input_dim (int): The size of the input dimension (height or width).
+    output_dim (int): The desired size of the output dimension (height or width).
+    stride (int): The stride of the convolution.
+    kernel_size (int): The size of the convolution kernel.
+
+    Returns:
+    tuple: The required padding and output_padding to achieve the desired output dimension.
+    """
+    no_padding_output_dim = (input_dim - 1) * stride + kernel_size
+
+    padding = math.ceil(max(no_padding_output_dim - output_dim, 0) / 2)
+    output_padding = max(output_dim - (no_padding_output_dim - 2 * padding), 0)
+
+    assert no_padding_output_dim - 2 * padding + output_padding == output_dim
+
+    return padding, output_padding
+
 def log_likelihood(trace):
     return sum(site['log_prob'] for site in trace.nodes.values()
                if site['type'] == 'sample' and site['is_observed'])
