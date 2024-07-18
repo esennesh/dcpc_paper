@@ -306,12 +306,16 @@ class ConvolutionalDecoder(MarkovKernel):
 
         self.linear = nn.Linear(z_dim, 256)
         self.convs = nn.Sequential(
-            nn.ConvTranspose2d(16, 64, 4, 2, 1), nn.InstanceNorm2d(64),
+            # 16x4x4 -> 64x8x8
+            nn.ConvTranspose2d(16, 64, 4, 2, 1), nn.LayerNorm([64, 8, 8]),
             nn.SiLU(),
-            nn.ConvTranspose2d(64, 64, 4, 2, 1), nn.InstanceNorm2d(64),
+            # 64x8x8 -> 64x16x16
+            nn.ConvTranspose2d(64, 64, 4, 2, 1), nn.LayerNorm([64, 16, 16]),
             nn.SiLU(),
-            nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.InstanceNorm2d(32),
+            # 64x16x16 -> 32x32x32
+            nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.LayerNorm([32, 32, 32]),
             nn.SiLU(),
+            # 32x32x32 -> 3x64x64
             nn.ConvTranspose2d(32, channels, 4, 2, 1),
             nonlinearity()
         )
