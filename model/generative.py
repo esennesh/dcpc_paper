@@ -14,6 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, ImportanceModel, MarkovKernel
 from base import MarkovKernelApplication
+from utils.util import ConvTransposeBlock2d
 from utils.thirdparty import NLVM, ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
@@ -306,15 +307,9 @@ class ConvolutionalDecoder(MarkovKernel):
 
         self.linear = nn.Linear(z_dim, 256)
         self.convs = nn.Sequential(
-            # 16x4x4 -> 64x8x8
-            nn.ConvTranspose2d(16, 64, 4, 2, 1), nn.LayerNorm([64, 8, 8]),
-            nn.SiLU(),
-            # 64x8x8 -> 64x16x16
-            nn.ConvTranspose2d(64, 64, 4, 2, 1), nn.LayerNorm([64, 16, 16]),
-            nn.SiLU(),
-            # 64x16x16 -> 32x32x32
-            nn.ConvTranspose2d(64, 32, 4, 2, 1), nn.LayerNorm([32, 32, 32]),
-            nn.SiLU(),
+            ConvTransposeBlock2d(16, 4, 64, 8, nn.SiLU), # 16x4x4 -> 64x8x8
+            ConvTransposeBlock2d(64, 8, 64, 16, nn.SiLU), # 64x8x8 -> 64x16x16
+            ConvTransposeBlock2d(64, 16, 32, 32, nn.SiLU), # 64x16x16 -> 32x32x32
             # 32x32x32 -> 3x64x64
             nn.ConvTranspose2d(32, channels, 4, 2, 1),
             nonlinearity()
