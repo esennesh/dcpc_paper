@@ -6,6 +6,33 @@ import pandas as pd
 from pathlib import Path
 import pyro
 import torch
+import torch.nn as nn
+
+class ConvTransposeBlock2d(nn.Module):
+    def __init__(self, in_chans, in_side, out_chans, out_side,
+                 nonlinearity=nn.SiLU):
+        super().__init__()
+
+        # in_chans x in_side x in_side -> in_chans x in_side x in_side
+        self.bottleneck = nn.Sequential(
+            nn.Conv2d(in_chans, out_chans, 4, 2, 1),
+            nn.LayerNorm([out_chans, in_side // 2, in_side // 2]),
+            nonlinearity(),
+            nn.ConvTranspose2d(out_chans, out_chans, 4, 2, 1),
+            nn.LayerNorm([out_chans, in_side, in_side]),
+            nonlinearity(),
+        )
+        # out_chans x in_side x in_side -> out_chans x out_side x out_side
+        padding = deconv2d_padding(in_side, out_side, 4, 2)
+        self.upsample = nn.Sequential(
+            nn.ConvTranspose2d(in_chans+out_chans, out_chans, 4, 2, padding[0]),
+            nn.LayerNorm([out_chans, out_side, out_side]),
+            nonlinearity(),
+        )
+
+    def forward(self, features):
+        hidden = torch.cat((features, self.bottleneck(features)), dim=-3)
+        return self.upsample(hidden)
 
 def deconv2d_padding(input_dim, output_dim, kernel_size, stride):
     """
