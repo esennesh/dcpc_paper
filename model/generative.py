@@ -305,12 +305,21 @@ class ConvolutionalDecoder(MarkovKernel):
         self._channels = channels
         self._img_side = img_side
 
-        self.linear = nn.Linear(z_dim, 256)
+        self.linear = nn.Sequential(
+            nn.Linear(z_dim, 256),
+            nn.BatchNorm1d(256, track_running_stats=False),
+            nn.SiLU()
+        )
         self.convs = nn.Sequential(
-            ConvTransposeBlock2d(16, 4, 64, 8, nn.SiLU), # 16x4x4 -> 64x8x8
-            ConvTransposeBlock2d(64, 8, 64, 16, nn.SiLU), # 64x8x8 -> 64x16x16
-            ConvTransposeBlock2d(64, 16, 32, 32, nn.SiLU), # 64x16x16 -> 32x32x32
-            # 32x32x32 -> 3x64x64
+            nn.ConvTranspose2d(256, 64, 4, 1, 0), # 256 x 1 x 1 -> 64 x 4 x 4
+            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+            nn.ConvTranspose2d(64, 64, 4, 2, 1), # 64 x 4 x 4 -> 64 x 8 x 8
+            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1), # 64 x 8 x 8 -> 32 x 16 x 16
+            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # 32 x 16 x 16 -> 32 x 32 x 32
+            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
+            # 32 x 32 x 32 -> 3 x 64 x 64
             nn.ConvTranspose2d(32, channels, 4, 2, 1),
             nonlinearity()
         )
@@ -322,11 +331,11 @@ class ConvolutionalDecoder(MarkovKernel):
 
     def forward(self, zs: torch.Tensor) -> dist.Distribution:
         P, B, _ = zs.shape
-        hs = self.linear(zs)
-        hs = hs.view(P*B, 16, 4, 4)
+        hs = self.linear(zs.view(P*B, -1))
+        hs = hs.view(P*B, 256, 1, 1)
         hs = self.convs(hs).view(P, B, self._channels, self._img_side,
                                  self._img_side)
-        return dist.Normal(hs, self.log_scale.exp() + 1e-4).to_event(3)
+        return dist.Normal(hs, self.log_scale.exp() + 1e-5).to_event(3)
 
 class FixedVarianceDecoder(MarkovKernel):
     def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
