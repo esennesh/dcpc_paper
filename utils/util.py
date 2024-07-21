@@ -16,17 +16,17 @@ class ConvTransposeBlock2d(nn.Module):
         # in_chans x in_side x in_side -> in_chans x in_side x in_side
         self.bottleneck = nn.Sequential(
             nn.Conv2d(in_chans, out_chans, 4, 2, 1),
-            nn.LayerNorm([out_chans, in_side // 2, in_side // 2]),
+            nn.BatchNorm2d(out_chans, track_running_stats=False),
             nonlinearity(),
             nn.ConvTranspose2d(out_chans, out_chans, 4, 2, 1),
-            nn.LayerNorm([out_chans, in_side, in_side]),
+            nn.BatchNorm2d(out_chans, track_running_stats=False),
             nonlinearity(),
         )
         # out_chans x in_side x in_side -> out_chans x out_side x out_side
         padding = deconv2d_padding(in_side, out_side, 4, 2)
         self.upsample = nn.Sequential(
             nn.ConvTranspose2d(in_chans+out_chans, out_chans, 4, 2, padding[0]),
-            nn.LayerNorm([out_chans, out_side, out_side]),
+            nn.BatchNorm2d(out_chans, track_running_stats=False),
             nonlinearity(),
         )
 
