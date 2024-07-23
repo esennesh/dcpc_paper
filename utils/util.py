@@ -8,6 +8,27 @@ import pyro
 import torch
 import torch.nn as nn
 
+class Conv2dUpsampleBlock(nn.Module):
+    def __init__(self, in_chans, in_side, out_chans, out_side, kernel_size=4,
+                 stride=2, padding=1, nonlinearity=nn.SiLU):
+        super().__init__()
+
+        self.residual = nn.Sequential(
+            nn.Conv2d(in_chans, in_chans, 3, 1, 1),
+            nn.BatchNorm2d(in_chans, track_running_stats=False),
+            nonlinearity()
+        )
+        # in_chans x in_side x in_side -> out_chans x out_side x out_side
+        self.upsample = nn.Sequential(
+            nn.Upsample(size=(out_side, out_side)),
+            nn.Conv2d(in_chans, out_chans, kernel_size, stride, padding),
+            nn.BatchNorm2d(out_chans, track_running_stats=False),
+            nonlinearity()
+        )
+
+    def forward(self, features):
+        return self.upsample(self.residual(features) + features)
+
 class ConvTransposeBlock2d(nn.Module):
     def __init__(self, in_chans, in_side, out_chans, out_side,
                  nonlinearity=nn.SiLU):
