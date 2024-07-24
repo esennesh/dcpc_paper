@@ -10,6 +10,7 @@ import pyro
 import pyro.distributions as dist
 import pyro.nn as pnn
 import torch
+from torch.distributions import biject_to
 import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, ImportanceModel, MarkovKernel
@@ -365,7 +366,7 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
 
     def add_node(self, site, parents, kernel):
         self._graph.add_node(site, is_observed=False, kernel=kernel, kwargs={},
-                             value=None)
+                             support=None, value=None)
         for parent in parents:
             self._graph.add_edge(parent, site)
 
@@ -403,6 +404,7 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
             density = kernel(*self.parent_vals(site))
             obs = self.nodes[site]['value'] if self.nodes[site]['is_observed']\
                   else None
+            self.nodes[site]['support'] = density.support
             self.update(site, pyro.sample(site, density, obs=obs).detach())
 
             if len(list(self.child_sites(site))) == 0:
@@ -415,8 +417,7 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
                                  **apply.kwargs)
 
     def log_prob(self, site, value, *args, **kwargs):
-        density = self.kernel(site)(*args, **kwargs)
-        return density.log_prob(value)
+        return self.kernel(site)(*args, **kwargs).log_prob(value)
 
     @property
     def nodes(self):

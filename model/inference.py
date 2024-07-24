@@ -96,6 +96,8 @@ class PpcGraphicalModel(GraphicalModel):
         value = self.nodes[site]['value']
         pvals = self.parent_vals(site)
         def logprobsum(value, *args, **kwargs):
+            if self.nodes[site]['support']:
+                value = biject_to(self.nodes[site]['support'])(value)
             return self.log_prob(site, value, *args, **kwargs).sum()
 
         if torch.is_floating_point(value):
@@ -103,6 +105,8 @@ class PpcGraphicalModel(GraphicalModel):
                                     argnums=tuple(range(1+len(pvals))))
         else:
             raise NotImplementedError("Discrete prediction errors not implemented!")
+        if self.nodes[site]['support']:
+            value = biject_to(self.nodes[site]['support']).inv(value)
         return error(value, *pvals)
 
     def _site_errors(self, site):
@@ -113,10 +117,15 @@ class PpcGraphicalModel(GraphicalModel):
     @torch.no_grad()
     def get_posterior(self, name: str, event_dim: int, lr=1e-3, mode=None):
         z = self.nodes[name]['value']
+        if self.nodes[name]['support']:
+            bijector = biject_to(self.nodes[name]['support'])
+            z = bijector.inv(z)
         error = self._complete_conditional_error(name)
 
         proposal = dist.Normal(z + lr * error, math.sqrt(2 * lr))
         proposal = proposal.to_event(event_dim)
+        if self.nodes[name]['support']:
+            proposal = dist.TransformedDistribution(proposal, [bijector])
         if mode == "online":
             return proposal
         else:
