@@ -178,8 +178,8 @@ class GeneratorPpc(PpcGraphicalModel):
         locs = torch.tensor(gmm.means_).to(dtype=torch.float)
         tril = torch.tril(torch.tensor(gmm.covariances_)).to(dtype=torch.float)
 
-        cs = assignments.sample((P*B,))
-        zs = dist.MultivariateNormal(locs[cs], scale_tril=tril[cs]).sample()
+        cs = assignments.sample((B,))
+        zs = dist.MultivariateNormal(locs[cs], scale_tril=tril[cs])((P,))
         zs = zs.to(device=self.prior.loc.device)
         return super().predict(*args, B=B, P=P, z=zs.view(P, B, -1))
 
