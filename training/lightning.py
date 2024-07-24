@@ -169,7 +169,7 @@ class LightningPpc(L.LightningModule):
             "ess": metric.ess(trace, log_weight),
             "log_joint": metric.log_joint(trace, log_weight),
             "log_marginal": metric.log_marginal(trace, log_weight),
-            "loss": -utils.logmeanexp(log_weight, dim=0).mean()
+            "loss": -log_weight.mean()
         }
         if len(self.data.dims) == 3 and self.data.dims[0] == 3:
             fid = torchmetrics.image.fid.FrechetInceptionDistance(
