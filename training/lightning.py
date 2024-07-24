@@ -80,6 +80,7 @@ class LightningPpc(L.LightningModule):
         self.lrp = lrp
         self.lrq = lrq
         self.graph = graph
+        self.metrics = {}
         self.num_particles = num_particles
         self.num_sweeps = num_sweeps
         self.patience = patience
@@ -89,6 +90,11 @@ class LightningPpc(L.LightningModule):
 
         self._num_train = len(data.train_dataloader().dataset)
         self._num_valid = len(data.val_dataloader().dataset)
+        if len(self.data.dims) == 3 and self.data.dims[0] == 3:
+            self.metrics['fid'] =\
+                torchmetrics.image.fid.FrechetInceptionDistance(
+                    input_img_size=self.data.dims, normalize=True,
+                )
 
     def setup(self, stage):
         num_train, num_valid = self._num_train, self._num_valid
@@ -157,8 +163,9 @@ class LightningPpc(L.LightningModule):
                          P=self.num_particles)
 
     @torch.no_grad()
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx, reset_fid=False):
         data, _, indices = batch
+        data = data.to(self.device)
         self.graph.clear()
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             graph(B=data.shape[0], mode="prior", P=self.num_particles)
@@ -172,20 +179,25 @@ class LightningPpc(L.LightningModule):
             "loss": -log_weight.mean()
         }
         if len(self.data.dims) == 3 and self.data.dims[0] == 3:
-            fid = torchmetrics.image.fid.FrechetInceptionDistance(
-                input_img_size=self.data.dims, normalize=True
-            ).set_dtype(torch.float64).to(device=data.device)
-            data = self.data.reverse_transform(data)
-            fid.update(data, real=True)
+            self.metrics['fid'] = self.metrics['fid'].to(self.device)
+            self.metrics['fid'].update(self.data.reverse_transform(data),
+                                       real=True)
 
             posterior = {k: torch.cat((v, self.particles["valid"][k]), dim=1)
                             for k, v in self.particles["train"].items()}
             B = len(data) // self.num_particles
             imgs = self.graph.predict(B=B, P=self.num_particles, **posterior)
-            imgs = self.data.reverse_transform(imgs.view(B*self.num_particles,
-                                                         *self.data.dims))
-            fid.update(imgs, real=False)
-            metrics["fid"] = fid.compute()
+            imgs = self.data.reverse_transform(
+                imgs.view(self.num_particles*B, *self.data.dims)
+            ).clamp(0, 1)
+            self.metrics['fid'].update(imgs, real=False)
+
+            if reset_fid:
+                metrics["fid"] = self.metrics['fid'].compute()
+                self.metrics['fid'].reset()
+            self.metrics['fid'] = self.metrics['fid'].cpu()
+            del imgs
+        del data
 
         return metrics
 
