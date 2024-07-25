@@ -166,6 +166,8 @@ class GeneratorPpc(PpcGraphicalModel):
         self.add_node("X", ["z"], MarkovKernelApplication("likelihood", (),
                                                           {}))
 
+        self.gmm = None
+
     def conditioner(self, data):
         return {"X": data}
 
@@ -173,10 +175,12 @@ class GeneratorPpc(PpcGraphicalModel):
         from sklearn.mixture import GaussianMixture
         z = z.flatten(0, 1)
         idx = torch.randint(0, z.shape[0], (self._prediction_subsample,))
-        gmm = GaussianMixture(n_components=100).fit(z[idx])
-        assignments = dist.Categorical(probs=torch.tensor(gmm.weights_))
-        locs = torch.tensor(gmm.means_).to(dtype=torch.float)
-        tril = torch.tril(torch.tensor(gmm.covariances_)).to(dtype=torch.float)
+        if self.gmm is None:
+            self.gmm = GaussianMixture(n_components=100).fit(z[idx])
+        assignments = dist.Categorical(probs=torch.tensor(self.gmm.weights_))
+        locs = torch.tensor(self.gmm.means_).to(dtype=torch.float)
+        tril = torch.tril(torch.tensor(self.gmm.covariances_))
+        tril = tril.to(dtype=torch.float)
 
         cs = assignments.sample((B,))
         zs = dist.MultivariateNormal(locs[cs], scale_tril=tril[cs])((P,))
