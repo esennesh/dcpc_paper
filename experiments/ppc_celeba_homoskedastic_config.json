@@ -22,7 +22,7 @@
         "type": "CelebADataModule",
         "args":{
             "data_dir": "data/",
-            "batch_size": 1024,
+            "batch_size": 128,
             "side": 32
         }
     },
@@ -48,7 +48,7 @@
         "args": {
           "default_root_dir": "saved/",
           "devices": [7],
-          "max_epochs": 2000,
+          "max_epochs": 100,
           "min_epochs": 1
         }
     }
