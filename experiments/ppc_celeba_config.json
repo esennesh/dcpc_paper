@@ -12,7 +12,7 @@
         "type": "ModelCheckpoint",
         "args": {
             "auto_insert_metric_name": false,
-            "every_n_epochs": 100,
+            "every_n_epochs": 5,
             "filename": "checkpoint_{epoch}",
             "mode": "min",
             "monitor": "valid/loss"
@@ -32,10 +32,10 @@
         "args": {
             "cooldown": 10,
             "factor": 0.9,
-            "lrp": 8e-4,
-            "lrq": 8e-5,
+            "lrp": 1e-3,
+            "lrq": 1e-4,
             "num_particles": 16,
-            "num_sweeps": 1,
+            "num_sweeps": 10,
             "patience": 50
         }
     },
@@ -48,7 +48,7 @@
         "args": {
           "default_root_dir": "saved/",
           "devices": [7],
-          "max_epochs": 4500,
+          "max_epochs": 450,
           "min_epochs": 1
         }
     }
