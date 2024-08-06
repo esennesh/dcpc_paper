@@ -190,6 +190,44 @@ class GeneratorPpc(PpcGraphicalModel):
         zs = zs.to(device=self.prior.loc.device)
         return super().predict(*args, B=B, P=P, z=zs.view(P, B, -1))
 
+class ConvolutionalVae(ImportanceModel):
+    def __init__(self, dims, z_dim=40, hidden_dim=256):
+        super().__init__()
+        self._channels = dims[0]
+        self._prediction_subsample = 10000
+
+        self.decoder = ConvolutionalDecoder(dims[0], z_dim, dims[-1])
+        self.encoder = ConvolutionalEncoder(self._channels, z_dim, dims[-1])
+        self.prior = GaussianPrior(z_dim, False)
+
+    def model(self, xs=None, **kwargs):
+        B, _, _, _ = xs.shape
+        with pyro.plate_stack("data", (B,)):
+            z = pyro.sample("z", self.prior())
+            return pyro.sample("X", self.decoder(z), obs=xs)
+
+    def guide(self, xs: torch.Tensor, **kwargs):
+        B, _, _, _ = xs.shape
+        with pyro.plate_stack("data", (B,)):
+            return pyro.sample("z", self.encoder(xs).to_event(1))
+
+    def predict(self, *args, B=1, P=1, z=None):
+        from sklearn.mixture import GaussianMixture
+        z = z.flatten(0, 1)
+        idx = torch.randint(0, z.shape[0], (self._prediction_subsample,))
+        if self.gmm is None:
+            self.gmm = GaussianMixture(n_components=100).fit(z[idx])
+        assignments = dist.Categorical(probs=torch.tensor(self.gmm.weights_))
+        locs = torch.tensor(self.gmm.means_).to(dtype=torch.float)
+        tril = torch.tril(torch.tensor(self.gmm.covariances_))
+        tril = tril.to(dtype=torch.float)
+
+        cs = assignments.sample((B,))
+        zs = dist.MultivariateNormal(locs[cs], scale_tril=tril[cs])((P,))
+        zs = zs.to(device=self.prior.loc.device)
+        with pyro.condition(self.forward, data={"z": zs.view(P, B, -1)}) as f:
+            return f(*args, B=B, mode="prior", P=P)
+
 class SequentialMemoryPpc(PpcGraphicalModel):
     def __init__(self, dims, z_dim=480, u_dim=0, nonlinearity=nn.Tanh):
         super().__init__()
