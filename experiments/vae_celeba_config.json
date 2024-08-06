@@ -1,0 +1,52 @@
+{
+    "name": "CelebA_Vae",
+
+    "arch": {
+        "type": "ConvolutionalVae",
+        "args": {
+            "z_dim": 40
+        }
+    },
+    "checkpoint": {
+        "type": "ModelCheckpoint",
+        "args": {
+            "auto_insert_metric_name": false,
+            "every_n_epochs": 100,
+            "filename": "checkpoint_{epoch}",
+            "mode": "min",
+            "monitor": "valid/loss"
+        }
+    },
+    "data_module": {
+        "type": "CelebADataModule",
+        "args":{
+            "data_dir": "data/",
+            "batch_size": 64,
+            "num_workers": 8,
+            "side": 64
+        }
+    },
+    "lmodule": {
+        "type": "LightningSvi",
+        "args": {
+            "cooldown": 10,
+            "factor": 0.9,
+            "lr": 8e-4,
+            "num_particles": 16,
+            "patience": 50
+        }
+    },
+    "logger": {
+        "type": "TensorBoardLogger",
+        "args": {}
+    },
+    "trainer": {
+        "type": "Trainer",
+        "args": {
+          "default_root_dir": "saved/",
+          "devices": [7],
+          "max_epochs": 4500,
+          "min_epochs": 1
+        }
+    }
+}
