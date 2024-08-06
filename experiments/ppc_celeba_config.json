@@ -47,8 +47,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": [7],
-          "max_epochs": 450,
+          "devices": -1,
+          "max_epochs": 900,
           "min_epochs": 1
         }
     }
