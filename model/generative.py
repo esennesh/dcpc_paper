@@ -324,7 +324,6 @@ class ConvolutionalDecoder(MarkovKernel):
             nn.ConvTranspose2d(32, channels, 4, 2, 1),
             nonlinearity()
         )
-        self.log_scale = nn.Parameter(torch.zeros(()))
 
     @property
     def event_dim(self):
@@ -336,7 +335,7 @@ class ConvolutionalDecoder(MarkovKernel):
         hs = hs.view(P*B, 256, 1, 1)
         hs = self.convs(hs).view(P, B, self._channels, self._img_side,
                                  self._img_side)
-        return dist.Normal(hs, self.log_scale.exp() + 1e-5).to_event(3)
+        return dist.Normal(hs, 1e-2).to_event(3)
 
 class FixedVarianceDecoder(MarkovKernel):
     def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
