@@ -150,14 +150,17 @@ class DiffusionPpc(PpcGraphicalModel):
         return {"X__0": data}
 
 class GeneratorPpc(PpcGraphicalModel):
-    def __init__(self, dims, z_dim=40, heteroskedastic=True, hidden_dim=256):
+    def __init__(self, dims, z_dim=40, heteroskedastic=True, hidden_dim=256,
+                 discretize=True):
         super().__init__()
         self._channels = dims[0]
         self._prediction_subsample = 10000
 
         self.prior = GaussianPrior(z_dim, False)
         if heteroskedastic:
-            self.likelihood = ConvolutionalDecoder(dims[0], z_dim, dims[-1])
+            self.likelihood = ConvolutionalDecoder(dims[0], z_dim, dims[-1],
+                                                   discretize=discretize,
+                                                   hidden_dim=hidden_dim)
         else:
             self.likelihood = FixedVarianceDecoder(dims[0], dims[-1],
                                                    z_dim=z_dim)
