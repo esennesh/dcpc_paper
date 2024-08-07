@@ -191,13 +191,16 @@ class GeneratorPpc(PpcGraphicalModel):
         return super().predict(*args, B=B, P=P, z=zs.view(P, B, -1))
 
 class ConvolutionalVae(ImportanceModel):
-    def __init__(self, dims, z_dim=40, hidden_dim=256):
+    def __init__(self, dims, discretize=True, z_dim=40, hidden_dim=256):
         super().__init__()
         self._channels = dims[0]
         self._prediction_subsample = 10000
 
-        self.decoder = ConvolutionalDecoder(dims[0], z_dim, dims[-1])
-        self.encoder = ConvolutionalEncoder(self._channels, z_dim, dims[-1])
+        self.decoder = ConvolutionalDecoder(dims[0], z_dim, dims[-1],
+                                            discretize=discretize,
+                                            hidden_dim=hidden_dim)
+        self.encoder = ConvolutionalEncoder(self._channels, z_dim, dims[-1],
+                                            hidden_dim=hidden_dim)
         self.prior = GaussianPrior(z_dim, False)
 
     def model(self, xs=None, **kwargs):
