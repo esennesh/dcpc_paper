@@ -300,10 +300,12 @@ class DiffusionStep(MarkovKernel):
         return dist.Normal(loc, beta).to_event(3)
 
 class ConvolutionalDecoder(MarkovKernel):
-    def __init__(self, channels=3, z_dim=40, img_side=64, nonlinearity=nn.Tanh):
+    def __init__(self, channels=3, z_dim=40, img_side=64, nonlinearity=nn.Tanh,
+                 discretize=True):
         super().__init__()
         self.batch_shape = ()
         self._channels = channels
+        self._discretize = discretize
         self._img_side = img_side
 
         self.linear = nn.Sequential(
@@ -335,7 +337,9 @@ class ConvolutionalDecoder(MarkovKernel):
         hs = hs.view(P*B, 256, 1, 1)
         hs = self.convs(hs).view(P, B, self._channels, self._img_side,
                                  self._img_side)
-        return DiscretizedGaussian(hs, 1e-2).to_event(3)
+        if self._discretize:
+            return DiscretizedGaussian(hs, 1e-2).to_event(3)
+        return dist.Normal(hs, 1e-2).to_event(3)
 
 class FixedVarianceDecoder(MarkovKernel):
     def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
