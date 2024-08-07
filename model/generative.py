@@ -301,20 +301,21 @@ class DiffusionStep(MarkovKernel):
 
 class ConvolutionalDecoder(MarkovKernel):
     def __init__(self, channels=3, z_dim=40, img_side=64, nonlinearity=nn.Tanh,
-                 discretize=True):
+                 discretize=True, hidden_dim=256):
         super().__init__()
         self.batch_shape = ()
         self._channels = channels
         self._discretize = discretize
+        self._hidden_dim = hidden_dim
         self._img_side = img_side
 
         self.linear = nn.Sequential(
-            nn.Linear(z_dim, 256),
-            nn.BatchNorm1d(256, track_running_stats=False),
+            nn.Linear(z_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim, track_running_stats=False),
             nn.SiLU()
         )
         self.convs = nn.Sequential(
-            nn.ConvTranspose2d(256, 64, 4, 1, 0), # 256 x 1 x 1 -> 64 x 4 x 4
+            nn.ConvTranspose2d(hidden_dim, 64, 4, 1, 0), # 256 x 1 x 1 -> 64 x 4 x 4
             nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
             nn.ConvTranspose2d(64, 64, 4, 2, 1), # 64 x 4 x 4 -> 64 x 8 x 8
             nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
@@ -334,7 +335,7 @@ class ConvolutionalDecoder(MarkovKernel):
     def forward(self, zs: torch.Tensor) -> dist.Distribution:
         P, B, _ = zs.shape
         hs = self.linear(zs.view(P*B, -1))
-        hs = hs.view(P*B, 256, 1, 1)
+        hs = hs.view(P*B, self._hidden_dim, 1, 1)
         hs = self.convs(hs).view(P, B, self._channels, self._img_side,
                                  self._img_side)
         if self._discretize:
