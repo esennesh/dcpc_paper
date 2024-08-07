@@ -1,12 +1,69 @@
 from collections import OrderedDict
+from denoising_diffusion_pytorch.learned_gaussian_diffusion import discretized_gaussian_log_likelihood
 from itertools import repeat
 import json
 import math
 import pandas as pd
 from pathlib import Path
 import pyro
+import pyro.distributions as dist
 import torch
 import torch.nn as nn
+
+from .thirdparty import soft_clamp
+
+class DiscretizedGaussian(dist.TorchDistribution):
+    def __init__(self, loc, scale, min=-1, max=1, bins=256):
+        self._bin_width = (max - min) / bins
+        self._bins = bins
+        self._max, self._min = max, min
+        self._normal = dist.Normal(loc, scale)
+
+    @property
+    def batch_shape(self):
+        return self._normal.batch_shape
+
+    @property
+    def event_shape(self):
+        return self._normal.event_shape
+
+    @property
+    def has_rsample(self):
+        return True
+
+    @property
+    def loc(self):
+        return self._normal.loc
+
+    def log_prob(self, value):
+        if len(value.shape) < len(self.loc.shape):
+            value = value.expand(*self.loc.shape)
+        return discretized_gaussian_log_likelihood(value, means=self.loc,
+                                                   log_scales=self.scale.log())
+
+    @property
+    def max(self):
+        return self._max
+
+    @property
+    def min(self):
+        return self._min
+
+    def rsample(self, sample_shape=torch.Size([])):
+        samples = self._normal.rsample(sample_shape=sample_shape)
+        samples_frac = samples.frac()
+        samples = samples - samples_frac
+        samples = samples + (samples_frac / self._bin_width).round() *\
+                  self._bin_width
+        return soft_clamp(samples, self.min, self.max)
+
+    @property
+    def support(self):
+        return torch.distributions.constraints.interval(self.min, self.max)
+
+    @property
+    def scale(self):
+        return self._normal.scale
 
 class Conv2dUpsampleBlock(nn.Module):
     def __init__(self, in_chans, in_side, out_chans, out_side, kernel_size=4,

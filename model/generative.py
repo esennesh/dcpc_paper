@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, ImportanceModel, MarkovKernel
 from base import MarkovKernelApplication
-from utils.util import ConvTransposeBlock2d
+from utils.util import DiscretizedGaussian
 from utils.thirdparty import NLVM, ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
@@ -335,7 +335,7 @@ class ConvolutionalDecoder(MarkovKernel):
         hs = hs.view(P*B, 256, 1, 1)
         hs = self.convs(hs).view(P, B, self._channels, self._img_side,
                                  self._img_side)
-        return dist.Normal(hs, 1e-2).to_event(3)
+        return DiscretizedGaussian(hs, 1e-2).to_event(3)
 
 class FixedVarianceDecoder(MarkovKernel):
     def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
