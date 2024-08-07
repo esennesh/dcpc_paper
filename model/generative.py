@@ -300,9 +300,10 @@ class DiffusionStep(MarkovKernel):
         return dist.Normal(loc, beta).to_event(3)
 
 class ConvolutionalEncoder(pnn.PyroModule):
-    def __init__(self, channels=3, z_dim=40, img_side=64):
+    def __init__(self, channels=3, z_dim=40, hidden_dim=256, img_side=64):
         super().__init__()
         self._channels = channels
+        self._hidden_dim = hidden_dim
         self._img_side = img_side
         self._z_dim = z_dim
 
@@ -315,10 +316,10 @@ class ConvolutionalEncoder(pnn.PyroModule):
             nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
             nn.Conv2d(64, 64, 4, 2, 1), # 64 x 8 x 8 -> 64 x 4 x 4
             nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(64, 256, 4, 1, 0), # 64 x 4 x 4 -> 256 x 1 x 1
-            nn.BatchNorm2d(256, track_running_stats=False), nn.SiLU(),
+            nn.Conv2d(64, hidden_dim, 4, 1, 0), # 64 x 4 x 4 -> 256 x 1 x 1
+            nn.BatchNorm2d(hidden_dim, track_running_stats=False), nn.SiLU(),
         )
-        self.linear = nn.Linear(256, z_dim * 2)
+        self.linear = nn.Linear(hidden_dim, z_dim * 2)
 
     def forward(self, xs: torch.Tensor) -> dist.Distribution:
         B, _, _, _ = xs.shape
