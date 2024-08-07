@@ -4,6 +4,7 @@
     "arch": {
         "type": "ConvolutionalVae",
         "args": {
+            "discretize": false,
             "z_dim": 40
         }
     },
