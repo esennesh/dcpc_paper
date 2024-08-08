@@ -3,7 +3,7 @@ import lightning as L
 import math
 import numpy as np
 import pyro
-from pyro.infer import Importance, Predictive, SVI, JitTraceGraph_ELBO, TraceGraph_ELBO
+from pyro.infer import Importance, Predictive, SVI, JitTrace_ELBO, Trace_ELBO
 import torch
 import torch.nn.functional as F
 import torchmetrics
@@ -15,28 +15,39 @@ import utils
 
 class LightningSvi(L.LightningModule):
     def __init__(self, importance, data: L.LightningDataModule, jit=False,
-                 lr=1e-3, num_particles=4):
+                 lr=1e-3, num_particles=4, cooldown=50, factor=0.9,
+                 patience=100):
         super().__init__()
+        self.cooldown = cooldown
+        self.factor = factor
         self.importance = importance
         self.lr = lr
         self.num_particles = num_particles
+        self.patience = patience
 
         if jit:
-            elbo = JitTraceGraph_ELBO(num_particles=self.num_particles,
-                                      max_plate_nesting=1,
-                                      vectorize_particles=True)
+            elbo = JitTrace_ELBO(num_particles=self.num_particles,
+                                 max_plate_nesting=1,
+                                 vectorize_particles=True)
         else:
-            elbo = TraceGraph_ELBO(num_particles=self.num_particles,
-                                   max_plate_nesting=1,
-                                   vectorize_particles=True)
+            elbo = Trace_ELBO(num_particles=self.num_particles,
+                              max_plate_nesting=1,
+                              vectorize_particles=True)
         self.elbo = elbo(self.importance.model, self.importance.guide)
         self.predictive = Predictive(self.importance.model,
                                      guide=self.importance.guide,
                                      num_samples=self.num_particles)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.elbo.parameters(), amsgrad=True,
-                                lr=self.lr, weight_decay=0.)
+        optimizer = torch.optim.Adam(self.importance.parameters(),
+                                     amsgrad=True, lr=self.lr,
+                                     weight_decay=0.)
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, cooldown=self.cooldown, factor=self.factor,
+            patience=self.patience
+        )
+        return {"lr_scheduler": lr_scheduler, "monitor": "valid/loss",
+                "optimizer": optimizer}
 
     def forward(self, *args, **kwargs):
         return self.predictive(*args, **kwargs)
@@ -48,7 +59,7 @@ class LightningSvi(L.LightningModule):
         :param batch: Batch of training data for current training epoch.
         :return: Loss in this epoch.
         """
-        data, target = batch
+        data, target, _ = batch
         loss = self.elbo(data)
         self.log("train/loss", loss)
         return loss
@@ -60,9 +71,9 @@ class LightningSvi(L.LightningModule):
         :param batch: Batch of training data for current validation epoch.
         :return: Loss in this epoch.
         """
-        data, target = batch
+        data, target, _ = batch
         loss = self.elbo(data)
-        self.log("valid/loss", loss)
+        self.log("valid/loss", loss, sync_dist=True)
         return loss
 
 class LightningPpc(L.LightningModule):
