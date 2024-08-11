@@ -188,7 +188,8 @@ class GeneratorPpc(PpcGraphicalModel):
         cs = assignments.sample((B,))
         zs = dist.MultivariateNormal(locs[cs], scale_tril=tril[cs])((P,))
         zs = zs.to(device=self.prior.loc.device)
-        return super().predict(*args, B=B, P=P, z=zs.view(P, B, -1))
+        predictive = self.kernel("X")(zs.view(P, B, -1))
+        return predictive.base_dist.loc
 
 class ConvolutionalVae(ImportanceModel):
     def __init__(self, dims, discretize=True, z_dim=40, hidden_dim=256):
