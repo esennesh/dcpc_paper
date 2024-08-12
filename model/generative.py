@@ -355,6 +355,7 @@ class ConvolutionalDecoder(MarkovKernel):
             nn.ConvTranspose2d(32, channels, 4, 2, 1),
             nonlinearity()
         )
+        self.register_buffer('scale', torch.ones((), requires_grad=False))
 
     @property
     def event_dim(self):
@@ -366,9 +367,15 @@ class ConvolutionalDecoder(MarkovKernel):
         hs = hs.view(P*B, self._hidden_dim, 1, 1)
         hs = self.convs(hs).view(P, B, self._channels, self._img_side,
                                  self._img_side)
+        if self.training and obs is not None:
+            scale = ((obs - hs) ** 2).mean().sqrt()
+            scale = 0.99 * scale + 0.01 * self.scale
+            self.scale = scale.detach()
+        else:
+            scale = self.scale
         if self._discretize:
-            return DiscretizedGaussian(hs, 1e-2).to_event(3)
-        return dist.Normal(hs, 1e-2).to_event(3)
+            return DiscretizedGaussian(hs, scale).to_event(3)
+        return dist.Normal(hs, scale).to_event(3)
 
 class FixedVarianceDecoder(MarkovKernel):
     def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
