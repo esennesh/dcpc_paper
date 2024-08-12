@@ -433,9 +433,9 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
         results = ()
 
         for site, kernel in self.sweep():
-            density = kernel(*self.parent_vals(site))
             obs = self.nodes[site]['value'] if self.nodes[site]['is_observed']\
                   else None
+            density = kernel(*self.parent_vals(site), **{"obs": obs})
             self.nodes[site]['support'] = density.support
             self.update(site, pyro.sample(site, density, obs=obs).detach())
 
