@@ -64,7 +64,8 @@ class MarkovKernel(pyro.nn.PyroModule):
         raise NotImplementedError
 
     @abstractmethod
-    def forward(self, *args, **kwargs) -> pyro.distributions.Distribution:
+    def forward(self, *args, obs=None,
+                **kwargs) -> pyro.distributions.Distribution:
         """
         Forward pass logic
 
