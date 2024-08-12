@@ -35,7 +35,7 @@ class DigitPositions(MarkovKernel):
     def event_dim(self):
         return 2
 
-    def forward(self, z_where) -> dist.Distribution:
+    def forward(self, z_where, obs=None) -> dist.Distribution:
         param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         scale = self.scale.expand(param_shape)
         if z_where is None:
@@ -58,7 +58,7 @@ class DigitFeatures(MarkovKernel):
     def event_dim(self):
         return 2
 
-    def forward(self) -> dist.Distribution:
+    def forward(self, obs=None) -> dist.Distribution:
         dist_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
 
@@ -100,7 +100,7 @@ class DigitsDecoder(MarkovKernel):
     def event_dim(self):
         return 2
 
-    def forward(self, what, where) -> dist.Distribution:
+    def forward(self, what, where, obs=None) -> dist.Distribution:
         P, B, K, _ = where.shape
         if what not in self._digits:
             self._digits = {
@@ -125,7 +125,7 @@ class DigitDecoder(MarkovKernel):
     def event_dim(self):
         return 3
 
-    def forward(self, what, x=None) -> dist.Distribution:
+    def forward(self, what, obs=None) -> dist.Distribution:
         P, B, _, _ = what.shape
         estimate = self.decoder(what).view(P, B, 1, self._digit_side,
                                            self._digit_side)
@@ -147,7 +147,7 @@ class GaussianPrior(MarkovKernel):
     def event_dim(self):
         return 1
 
-    def forward(self) -> dist.Distribution:
+    def forward(self, obs=None) -> dist.Distribution:
         loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
@@ -167,7 +167,7 @@ class ConditionalGaussian(MarkovKernel):
     def event_dim(self):
         return 1
 
-    def forward(self, hs: torch.Tensor) -> dist.Distribution:
+    def forward(self, hs: torch.Tensor, obs=None) -> dist.Distribution:
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
         return dist.MultivariateNormal(self.decoder(hs), scale_tril=scale)
@@ -191,7 +191,7 @@ class GaussianSsm(MarkovKernel):
     def event_dim(self):
         return 1
 
-    def forward(self, z: torch.Tensor, u=None) -> dist.Distribution:
+    def forward(self, z: torch.Tensor, u=None, obs=None) -> dist.Distribution:
         assert (self._u_dim > 0) == (u is not None)
 
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
@@ -220,7 +220,7 @@ class GaussianEmission(MarkovKernel):
     def event_dim(self):
         return 1
 
-    def forward(self, z: torch.Tensor, u=None) -> dist.Distribution:
+    def forward(self, z: torch.Tensor, u=None, obs=None) -> dist.Distribution:
         assert (self._u_dim > 0) == (u is not None)
 
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
@@ -244,7 +244,7 @@ class MlpBernoulliLikelihood(MarkovKernel):
     def event_dim(self):
         return 1 + len(self._out_shape)
 
-    def forward(self, hs: torch.Tensor) -> dist.Distribution:
+    def forward(self, hs: torch.Tensor, obs=None) -> dist.Distribution:
         P, B, _ = hs.shape
         logits = self.decoder(hs).view(P, B, 1, *self._out_shape)
         return dist.ContinuousBernoulli(logits=logits).to_event(self.event_dim)
@@ -260,7 +260,7 @@ class DiffusionPrior(MarkovKernel):
     def event_dim(self):
         return 3
 
-    def forward(self) -> dist.Distribution:
+    def forward(self, obs=None) -> dist.Distribution:
         loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
         scale = self.scale.expand(*self.batch_shape, *self.scale.shape)
         return dist.Normal(loc, scale).to_event(3)
@@ -287,7 +287,7 @@ class DiffusionStep(MarkovKernel):
     def event_dim(self):
         return 3
 
-    def forward(self, xs_prev: torch.Tensor, t=0) -> dist.Distribution:
+    def forward(self, xs_prev: torch.Tensor, t=0, obs=None):
         P, B, C, W, H = xs_prev.shape
         score = self.unet(xs_prev.view(P*B, C, W, H),
                           torch.tensor(t, device=xs_prev.device,
@@ -360,7 +360,7 @@ class ConvolutionalDecoder(MarkovKernel):
     def event_dim(self):
         return 3
 
-    def forward(self, zs: torch.Tensor) -> dist.Distribution:
+    def forward(self, zs: torch.Tensor, obs=None) -> dist.Distribution:
         P, B, _ = zs.shape
         hs = self.linear(zs.view(P*B, -1))
         hs = hs.view(P*B, self._hidden_dim, 1, 1)
@@ -384,7 +384,7 @@ class FixedVarianceDecoder(MarkovKernel):
     def event_dim(self):
         return 3
 
-    def forward(self, zs: torch.Tensor) -> dist.Distribution:
+    def forward(self, zs: torch.Tensor, obs=None) -> dist.Distribution:
         P, B, _ = zs.shape
         loc = self.mean_network(zs.view(P*B, -1)).view(P, B, self._channels,
                                                        self._img_side,
