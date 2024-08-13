@@ -1,19 +1,18 @@
 {
-    "name": "Heteroskedastic_CelebA_Ppc",
+    "name": "CelebA_Vae",
 
     "arch": {
-        "type": "GeneratorPpc",
+        "type": "ConvolutionalVae",
         "args": {
-            "heteroskedastic": true,
-            "z_dim": 40,
-            "discretize": true
+            "discretize": false,
+            "z_dim": 40
         }
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
         "args": {
             "auto_insert_metric_name": false,
-            "every_n_epochs": 5,
+            "every_n_epochs": 100,
             "filename": "checkpoint_{epoch}",
             "mode": "min",
             "monitor": "valid/loss"
@@ -29,14 +28,12 @@
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningSvi",
         "args": {
             "cooldown": 10,
             "factor": 0.9,
-            "lrp": 1e-3,
-            "lrq": 1e-4,
+            "lr": 8e-4,
             "num_particles": 16,
-            "num_sweeps": 10,
             "patience": 50
         }
     },
@@ -48,8 +45,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": -1,
-          "max_epochs": 450,
+          "devices": [4,5,6,7],
+          "max_epochs": 4500,
           "min_epochs": 1
         }
     }

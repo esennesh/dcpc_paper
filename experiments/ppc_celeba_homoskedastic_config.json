@@ -1,19 +1,18 @@
 {
-    "name": "Heteroskedastic_CelebA_Ppc",
+    "name": "Homoskedastic_CelebA_Ppc",
 
     "arch": {
         "type": "GeneratorPpc",
         "args": {
-            "heteroskedastic": true,
-            "z_dim": 40,
-            "discretize": true
+            "heteroskedastic": false,
+            "z_dim": 64
         }
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
         "args": {
             "auto_insert_metric_name": false,
-            "every_n_epochs": 5,
+            "every_n_epochs": 10,
             "filename": "checkpoint_{epoch}",
             "mode": "min",
             "monitor": "valid/loss"
@@ -23,9 +22,8 @@
         "type": "CelebADataModule",
         "args":{
             "data_dir": "data/",
-            "batch_size": 64,
-            "num_workers": 8,
-            "side": 64
+            "batch_size": 128,
+            "side": 32
         }
     },
     "lmodule": {
@@ -35,9 +33,10 @@
             "factor": 0.9,
             "lrp": 1e-3,
             "lrq": 1e-4,
-            "num_particles": 16,
-            "num_sweeps": 10,
-            "patience": 50
+            "num_particles": 10,
+            "num_sweeps": 1,
+            "patience": 50,
+            "resampling": true
         }
     },
     "logger": {
@@ -48,8 +47,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": -1,
-          "max_epochs": 450,
+          "devices": [7],
+          "max_epochs": 100,
           "min_epochs": 1
         }
     }

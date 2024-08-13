@@ -1,5 +1,5 @@
 {
-    "name": "Homoskedastic_CelebA_Ppc",
+    "name": "Homoskedastic_CelebA_Pgd",
 
     "arch": {
         "type": "GeneratorPpc",
@@ -31,7 +31,8 @@
         "args": {
             "cooldown": 10,
             "factor": 0.9,
-            "lr": 1e-4,
+            "lrp": 1e-3,
+            "lrq": 1e-4,
             "num_particles": 10,
             "num_sweeps": 1,
             "patience": 50,
@@ -46,8 +47,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": [7],
-          "max_epochs": 100,
+          "devices": [6],
+          "max_epochs": 500,
           "min_epochs": 1
         }
     }
