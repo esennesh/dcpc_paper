@@ -36,7 +36,7 @@
             "lrp": 1e-3,
             "lrq": 1e-4,
             "num_particles": 16,
-            "num_sweeps": 10,
+            "num_sweeps": 30,
             "patience": 50
         }
     },
@@ -48,8 +48,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": -1,
-          "max_epochs": 450,
+          "devices": [7],
+          "max_epochs": 150,
           "min_epochs": 1
         }
     }
