@@ -1,10 +1,11 @@
 {
-    "name": "CelebA_Vae",
+    "name": "CelebA_SigmaVae",
 
     "arch": {
         "type": "ConvolutionalVae",
         "args": {
-            "discretize": false,
+            "discretize": true,
+            "heteroskedastic": true,
             "z_dim": 40
         }
     },
@@ -45,7 +46,7 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": [4,5,6,7],
+          "devices": -1,
           "max_epochs": 4500,
           "min_epochs": 1
         }
