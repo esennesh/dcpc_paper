@@ -193,14 +193,20 @@ class GeneratorPpc(PpcGraphicalModel):
         return predictive.base_dist.loc
 
 class ConvolutionalVae(ImportanceModel):
-    def __init__(self, dims, discretize=True, z_dim=40, hidden_dim=256):
+    def __init__(self, dims, discretize=True, heteroskedastic=True, z_dim=40,
+                 hidden_dim=256):
         super().__init__()
         self._channels = dims[0]
         self._prediction_subsample = 10000
 
-        self.decoder = ConvolutionalDecoder(dims[0], z_dim, dims[-1],
-                                            discretize=discretize,
-                                            hidden_dim=hidden_dim)
+        if heteroskedastic:
+            self.decoder = ConvolutionalDecoder(dims[0], z_dim, dims[-1],
+                                                discretize=discretize,
+                                                hidden_dim=hidden_dim)
+        else:
+            self.decoder = FixedVarianceDecoder(dims[0], dims[-1],
+                                                discretize=discretize,
+                                                z_dim=z_dim)
         self.encoder = ConvolutionalEncoder(self._channels, z_dim, dims[-1],
                                             hidden_dim=hidden_dim)
         self.prior = GaussianPrior(z_dim, False)
