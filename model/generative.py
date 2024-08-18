@@ -378,10 +378,12 @@ class ConvolutionalDecoder(MarkovKernel):
         return dist.Normal(hs, scale).to_event(3)
 
 class FixedVarianceDecoder(MarkovKernel):
-    def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
+    def __init__(self, channels=3, discretize=True, img_side=64, scale=0.01,
+                 z_dim=64):
         super().__init__()
         self.batch_shape = ()
         self._channels = channels
+        self._discretize = discretize
         self._img_side = img_side
 
         self.likelihood_scale = scale
@@ -396,6 +398,8 @@ class FixedVarianceDecoder(MarkovKernel):
         loc = self.mean_network(zs.view(P*B, -1)).view(P, B, self._channels,
                                                        self._img_side,
                                                        self._img_side)
+        if self._discretize:
+            return DiscretizedGaussian(loc, self.likelihood_scale).to_event(3)
         return dist.Normal(loc, self.likelihood_scale).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
