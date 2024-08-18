@@ -207,8 +207,9 @@ class ConvolutionalVae(ImportanceModel):
             self.decoder = FixedVarianceDecoder(dims[0], dims[-1],
                                                 discretize=discretize,
                                                 z_dim=z_dim)
-        self.encoder = ConvolutionalEncoder(self._channels, z_dim, dims[-1],
-                                            hidden_dim=hidden_dim)
+        self.encoder = ConvolutionalEncoder(self._channels, z_dim,
+                                            hidden_dim=hidden_dim,
+                                            img_side=dims[-1])
         self.prior = GaussianPrior(z_dim, False)
 
     def model(self, xs=None, **kwargs):
