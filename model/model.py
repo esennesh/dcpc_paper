@@ -162,7 +162,8 @@ class GeneratorPpc(PpcGraphicalModel):
                                                    discretize=discretize,
                                                    hidden_dim=hidden_dim)
         else:
-            self.likelihood = FixedVarianceDecoder(dims[0], dims[-1],
+            self.likelihood = FixedVarianceDecoder(dims[0], img_side=dims[-1],
+                                                   discretize=discretize,
                                                    z_dim=z_dim)
 
         self.add_node("z", [], MarkovKernelApplication("prior", (), {}))
