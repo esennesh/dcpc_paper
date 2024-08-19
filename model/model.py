@@ -204,7 +204,7 @@ class ConvolutionalVae(ImportanceModel):
                                                 discretize=discretize,
                                                 hidden_dim=hidden_dim)
         else:
-            self.decoder = FixedVarianceDecoder(dims[0], dims[-1],
+            self.decoder = FixedVarianceDecoder(dims[0], img_side=dims[-1],
                                                 discretize=discretize,
                                                 z_dim=z_dim)
         self.encoder = ConvolutionalEncoder(self._channels, z_dim,
