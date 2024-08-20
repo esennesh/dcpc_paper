@@ -1,11 +1,11 @@
 {
-    "name": "CelebA_SigmaVae",
+    "name": "Homoscedastic_CelebA_Vae",
 
     "arch": {
         "type": "ConvolutionalVae",
         "args": {
-            "discretize": true,
-            "heteroskedastic": true,
+            "discretize": false,
+            "heteroskedastic": false,
             "z_dim": 40
         }
     },
@@ -23,9 +23,9 @@
         "type": "CelebADataModule",
         "args":{
             "data_dir": "data/",
-            "batch_size": 64,
+            "batch_size": 128,
             "num_workers": 8,
-            "side": 64
+            "side": 32
         }
     },
     "lmodule": {
@@ -33,8 +33,8 @@
         "args": {
             "cooldown": 10,
             "factor": 0.9,
-            "lr": 8e-4,
-            "num_particles": 16,
+            "lr": 1e-3,
+            "num_particles": 10,
             "patience": 50
         }
     },
@@ -46,8 +46,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": -1,
-          "max_epochs": 4500,
+          "devices": [7],
+          "max_epochs": 100,
           "min_epochs": 1
         }
     }

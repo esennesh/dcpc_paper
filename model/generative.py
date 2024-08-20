@@ -307,18 +307,32 @@ class ConvolutionalEncoder(pnn.PyroModule):
         self._img_side = img_side
         self._z_dim = z_dim
 
-        self.convs = nn.Sequential(
-            nn.Conv2d(channels, 32, 4, 2, 1), # 3 x 64 x 64 -> 32 x 32 x 32
-            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(32, 32, 4, 2, 1), # 32 x 32 x 32 -> 32 x 16 x 16
-            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(32, 64, 4, 2, 1), # 32 x 16 x 16 -> 64 x 8 x 8
-            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(64, 64, 4, 2, 1), # 64 x 8 x 8 -> 64 x 4 x 4
-            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(64, hidden_dim, 4, 1, 0), # 64 x 4 x 4 -> 256 x 1 x 1
-            nn.BatchNorm2d(hidden_dim, track_running_stats=False), nn.SiLU(),
-        )
+        if img_side == 64:
+            self.convs = nn.Sequential(
+                nn.Conv2d(channels, 32, 4, 2, 1), # 3 x 64 x 64 -> 32 x 32 x 32
+                nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(32, 32, 4, 2, 1), # 32 x 32 x 32 -> 32 x 16 x 16
+                nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(32, 64, 4, 2, 1), # 32 x 16 x 16 -> 64 x 8 x 8
+                nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(64, 64, 4, 2, 1), # 64 x 8 x 8 -> 64 x 4 x 4
+                nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(64, hidden_dim, 4, 1, 0), # 64 x 4 x 4 -> 256 x 1 x 1
+                nn.BatchNorm2d(hidden_dim, track_running_stats=False), nn.SiLU(),
+            )
+        elif img_side == 32:
+            self.convs = nn.Sequential(
+                nn.Conv2d(channels, 32, 4, 2, 1), # 3 x 32 x 32 -> 32 x 16 x 16
+                nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(32, 64, 4, 2, 1), # 32 x 16 x 16 -> 64 x 8 x 8
+                nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(64, 64, 4, 2, 1), # 64 x 8 x 8 -> 64 x 4 x 4
+                nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(64, hidden_dim, 4, 1, 0), # 64 x 4 x 4 -> 256 x 1 x 1
+                nn.BatchNorm2d(hidden_dim, track_running_stats=False), nn.SiLU(),
+            )
+        else:
+            raise NotImplementedError()
         self.linear = nn.Linear(hidden_dim, z_dim * 2)
 
     def forward(self, xs: torch.Tensor) -> dist.Distribution:
@@ -378,10 +392,12 @@ class ConvolutionalDecoder(MarkovKernel):
         return dist.Normal(hs, scale).to_event(3)
 
 class FixedVarianceDecoder(MarkovKernel):
-    def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
+    def __init__(self, channels=3, discretize=True, img_side=64, scale=0.01,
+                 z_dim=64):
         super().__init__()
         self.batch_shape = ()
         self._channels = channels
+        self._discretize = discretize
         self._img_side = img_side
 
         self.likelihood_scale = scale
@@ -396,6 +412,8 @@ class FixedVarianceDecoder(MarkovKernel):
         loc = self.mean_network(zs.view(P*B, -1)).view(P, B, self._channels,
                                                        self._img_side,
                                                        self._img_side)
+        if self._discretize:
+            return DiscretizedGaussian(loc, self.likelihood_scale).to_event(3)
         return dist.Normal(loc, self.likelihood_scale).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
