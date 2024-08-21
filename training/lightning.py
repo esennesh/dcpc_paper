@@ -37,7 +37,8 @@ class LightningSvi(L.LightningModule):
         self.elbo = elbo(self.importance.model, self.importance.guide)
         self.predictive = Predictive(self.importance.model,
                                      guide=self.importance.guide,
-                                     num_samples=self.num_particles)
+                                     num_samples=self.num_particles,
+                                     parallel=True)
         if len(self.data.dims) == 3 and self.data.dims[0] == 3:
             self.metrics = {
                 "fid": torchmetrics.image.fid.FrechetInceptionDistance(
