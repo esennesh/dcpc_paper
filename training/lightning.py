@@ -37,6 +37,11 @@ class LightningSvi(L.LightningModule):
         self.predictive = Predictive(self.importance.model,
                                      guide=self.importance.guide,
                                      num_samples=self.num_particles)
+        if len(self.data.dims) == 3 and self.data.dims[0] == 3:
+            self.metrics['fid'] =\
+                torchmetrics.image.fid.FrechetInceptionDistance(
+                    input_img_size=self.data.dims, normalize=True,
+                )
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.importance.parameters(),
@@ -51,6 +56,43 @@ class LightningSvi(L.LightningModule):
 
     def forward(self, *args, **kwargs):
         return self.predictive(*args, **kwargs)
+
+    @torch.no_grad()
+    def test_step(self, batch, batch_idx, reset_fid=False):
+        data, _, indices = batch
+        data = data.to(self.device)
+        loss = self.elbo(data)
+        trace, log_weight = self.importance(data)
+
+        metrics = {
+            "ess": metric.ess(trace, log_weight),
+            "log_joint": metric.log_joint(trace, log_weight),
+            "log_marginal": metric.log_marginal(trace, log_weight),
+            "loss": loss
+        }
+        if len(self.data.dims) == 3 and self.data.dims[0] == 3:
+            self.metrics['fid'] = self.metrics['fid'].to(self.device)
+            self.metrics['fid'].update(self.data.reverse_transform(data),
+                                       real=True)
+
+            posterior = {k: v['value'] for k, v in trace.nodes.items()
+                         if not v['is_observed']}
+            B = len(data) // self.num_particles
+            imgs = self.importance.predict(B=B, P=self.num_particles,
+                                           **posterior)
+            imgs = self.data.reverse_transform(
+                imgs.view(self.num_particles*B, *self.data.dims)
+            ).clamp(0, 1)
+            self.metrics['fid'].update(imgs, real=False)
+
+            if reset_fid:
+                metrics["fid"] = self.metrics['fid'].compute()
+                self.metrics['fid'].reset()
+            self.metrics['fid'] = self.metrics['fid'].cpu()
+            del imgs
+        del data
+
+        return metrics
 
     def training_step(self, batch, batch_idx):
         """
