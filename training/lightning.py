@@ -39,10 +39,11 @@ class LightningSvi(L.LightningModule):
                                      guide=self.importance.guide,
                                      num_samples=self.num_particles)
         if len(self.data.dims) == 3 and self.data.dims[0] == 3:
-            self.metrics['fid'] =\
-                torchmetrics.image.fid.FrechetInceptionDistance(
+            self.metrics = {
+                "fid": torchmetrics.image.fid.FrechetInceptionDistance(
                     input_img_size=self.data.dims, normalize=True,
                 )
+            }
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.importance.parameters(),
