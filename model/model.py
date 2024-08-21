@@ -216,7 +216,7 @@ class ConvolutionalVae(ImportanceModel):
         B, _, _, _ = xs.shape
         with pyro.plate_stack("data", (B,)):
             z = pyro.sample("z", self.prior())
-            return pyro.sample("X", self.decoder(z), obs=xs)
+            return pyro.sample("X", self.decoder(z, obs=xs), obs=xs)
 
     def guide(self, xs: torch.Tensor, **kwargs):
         B, _, _, _ = xs.shape
