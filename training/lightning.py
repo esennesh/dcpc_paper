@@ -19,6 +19,7 @@ class LightningSvi(L.LightningModule):
                  patience=100):
         super().__init__()
         self.cooldown = cooldown
+        self.data = data
         self.factor = factor
         self.importance = importance
         self.lr = lr
