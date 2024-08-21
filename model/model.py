@@ -237,7 +237,7 @@ class ConvolutionalVae(ImportanceModel):
         cs = assignments.sample((B,))
         zs = dist.MultivariateNormal(locs[cs], scale_tril=tril[cs])((P,))
         zs = zs.to(device=self.prior.loc.device)
-        with pyro.condition(self.forward, data={"z": zs.view(P, B, -1)}) as f:
+        with pyro.condition(self.model, data={"z": zs.view(P, B, -1)}) as f:
             return f(*args, B=B, mode="prior", P=P)
 
 class SequentialMemoryPpc(PpcGraphicalModel):
