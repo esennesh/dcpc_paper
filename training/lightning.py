@@ -56,8 +56,9 @@ class LightningSvi(L.LightningModule):
         return {"lr_scheduler": lr_scheduler, "monitor": "valid/loss",
                 "optimizer": optimizer}
 
-    def forward(self, *args, **kwargs):
-        return self.predictive(*args, **kwargs)
+    def forward(self, *args, B=1, P=1, **kwargs):
+        with pyro.plate_stack("importance", (P, B)):
+            return self.predictive(*args, B=B, P=P, **kwargs)
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx, reset_fid=False):
