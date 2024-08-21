@@ -57,9 +57,15 @@ class LightningSvi(L.LightningModule):
         return {"lr_scheduler": lr_scheduler, "monitor": "valid/loss",
                 "optimizer": optimizer}
 
-    def forward(self, *args, B=1, P=1, **kwargs):
-        with pyro.plate_stack("importance", (P, B)):
-            return self.predictive(*args, B=B, P=P, **kwargs)
+    def forward(self, *args, mode="joint", **kwargs):
+        with pyro.poutine.uncondition():
+            if mode == "prior":
+                with pyro.plate_stack("importance", (kwargs['P'],)):
+                    return self.elbo.model(*args, **kwargs)
+            tp, tq = self.elbo.elbo._get_vectorized_trace(self.elbo.model,
+                                                          self.elbo.guide,
+                                                          args, kwargs)
+            return tp.nodes['_RETURN']['value']
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx, reset_fid=False):
