@@ -223,10 +223,11 @@ class ConvolutionalVae(ImportanceModel):
         with pyro.plate_stack("data", (B,)):
             return pyro.sample("z", self.encoder(xs).to_event(1))
 
-    def predict(self, *args, B=1, P=1, z=None):
+    def predict(self, *args, B=1, P=1, z=None, **kwargs):
         zs = z.to(device=self.prior.loc.device)
-        model = pyro.condition(self.model, data={"z": zs.view(P, B, -1)})
-        return model(*args, B=B, P=P)
+        model = pyro.condition(self.model, data={"X": None, "z": zs.view(P, B, -1)})
+        trace = pyro.poutine.trace(model).get_trace(*args, B=B, P=P)
+        return trace.nodes["X"]["fn"].base_dist.base_dist.loc
 
 class SequentialMemoryPpc(PpcGraphicalModel):
     def __init__(self, dims, z_dim=480, u_dim=0, nonlinearity=nn.Tanh):
