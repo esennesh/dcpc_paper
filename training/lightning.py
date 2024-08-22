@@ -58,14 +58,16 @@ class LightningSvi(L.LightningModule):
                 "optimizer": optimizer}
 
     def forward(self, *args, mode="joint", **kwargs):
-        with pyro.poutine.uncondition():
-            if mode == "prior":
-                with pyro.plate_stack("importance", (kwargs['P'],)):
-                    return self.elbo.model(*args, **kwargs)
-            tp, tq = self.elbo.elbo._get_vectorized_trace(self.elbo.model,
-                                                          self.elbo.guide,
-                                                          args, kwargs)
-            return tp.nodes['_RETURN']['value']
+        if mode == "prior":
+            with pyro.plate("importance", kwargs['P'], dim=-2):
+                tp = pyro.poutine.trace(self.elbo.model).get_trace(*args,
+                                                                   **kwargs)
+        else:
+            with pyro.poutine.uncondition():
+                tp, tq = self.elbo.elbo._get_vectorized_trace(self.elbo.model,
+                                                              self.elbo.guide,
+                                                              args, kwargs)
+        return tp.nodes['X']["fn"].base_dist.base_dist.loc
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx, reset_fid=False):
