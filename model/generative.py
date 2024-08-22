@@ -297,6 +297,8 @@ class DiffusionStep(MarkovKernel):
         alpha, alpha_bar = self.alphas[t], self.alpha_bars[t]
         loc = 1/alpha.sqrt() * (xs_prev -
                                 (beta / (1. - alpha_bar).sqrt()) * score)
+        if t == 0:
+            return DiscretizedGaussian(loc, beta).to_event(3)
         return dist.Normal(loc, beta).to_event(3)
 
 class ConvolutionalEncoder(pnn.PyroModule):
