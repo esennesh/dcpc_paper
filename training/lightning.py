@@ -74,7 +74,11 @@ class LightningSvi(L.LightningModule):
         data, _, indices = batch
         data = data.to(self.device)
         loss = self.elbo(data)
-        trace, log_weight = self.importance(data)
+        trace, tq = self.elbo.elbo._get_vectorized_trace(
+            self.elbo.model, self.elbo.guide, (data,),
+            {"B": len(data), "P": self.num_particles}
+        )
+        log_weight = utils.log_joint(trace) - utils.log_joint(tq)
 
         metrics = {
             "ess": metric.ess(trace, log_weight),
@@ -87,11 +91,8 @@ class LightningSvi(L.LightningModule):
             self.metrics['fid'].update(self.data.reverse_transform(data),
                                        real=True)
 
-            posterior = {k: v['value'] for k, v in trace.nodes.items()
-                         if not v['is_observed']}
-            B = len(data) // self.num_particles
-            imgs = self.importance.predict(B=B, P=self.num_particles,
-                                           **posterior)
+            B = len(data)
+            imgs = self.forward(data, B=B, mode="prior", P=self.num_particles)
             imgs = self.data.reverse_transform(
                 imgs.view(self.num_particles*B, *self.data.dims)
             ).clamp(0, 1)
