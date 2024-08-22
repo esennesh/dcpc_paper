@@ -216,29 +216,18 @@ class ConvolutionalVae(ImportanceModel):
         B, _, _, _ = xs.shape
         with pyro.plate_stack("data", (B,)):
             z = pyro.sample("z", self.prior())
-            return pyro.sample("X", self.decoder(z), obs=xs)
+            return pyro.sample("X", self.decoder(z, obs=xs), obs=xs)
 
     def guide(self, xs: torch.Tensor, **kwargs):
         B, _, _, _ = xs.shape
         with pyro.plate_stack("data", (B,)):
             return pyro.sample("z", self.encoder(xs).to_event(1))
 
-    def predict(self, *args, B=1, P=1, z=None):
-        from sklearn.mixture import GaussianMixture
-        z = z.flatten(0, 1)
-        idx = torch.randint(0, z.shape[0], (self._prediction_subsample,))
-        if self.gmm is None:
-            self.gmm = GaussianMixture(n_components=100).fit(z[idx])
-        assignments = dist.Categorical(probs=torch.tensor(self.gmm.weights_))
-        locs = torch.tensor(self.gmm.means_).to(dtype=torch.float)
-        tril = torch.tril(torch.tensor(self.gmm.covariances_))
-        tril = tril.to(dtype=torch.float)
-
-        cs = assignments.sample((B,))
-        zs = dist.MultivariateNormal(locs[cs], scale_tril=tril[cs])((P,))
-        zs = zs.to(device=self.prior.loc.device)
-        with pyro.condition(self.forward, data={"z": zs.view(P, B, -1)}) as f:
-            return f(*args, B=B, mode="prior", P=P)
+    def predict(self, *args, B=1, P=1, z=None, **kwargs):
+        zs = z.to(device=self.prior.loc.device)
+        model = pyro.condition(self.model, data={"X": None, "z": zs.view(P, B, -1)})
+        trace = pyro.poutine.trace(model).get_trace(*args, B=B, P=P)
+        return trace.nodes["X"]["fn"].base_dist.base_dist.loc
 
 class SequentialMemoryPpc(PpcGraphicalModel):
     def __init__(self, dims, z_dim=480, u_dim=0, nonlinearity=nn.Tanh):

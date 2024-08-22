@@ -19,6 +19,7 @@ class LightningSvi(L.LightningModule):
                  patience=100):
         super().__init__()
         self.cooldown = cooldown
+        self.data = data
         self.factor = factor
         self.importance = importance
         self.lr = lr
@@ -36,7 +37,14 @@ class LightningSvi(L.LightningModule):
         self.elbo = elbo(self.importance.model, self.importance.guide)
         self.predictive = Predictive(self.importance.model,
                                      guide=self.importance.guide,
-                                     num_samples=self.num_particles)
+                                     num_samples=self.num_particles,
+                                     parallel=True)
+        if len(self.data.dims) == 3 and self.data.dims[0] == 3:
+            self.metrics = {
+                "fid": torchmetrics.image.fid.FrechetInceptionDistance(
+                    input_img_size=self.data.dims, normalize=True,
+                )
+            }
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.importance.parameters(),
@@ -49,8 +57,55 @@ class LightningSvi(L.LightningModule):
         return {"lr_scheduler": lr_scheduler, "monitor": "valid/loss",
                 "optimizer": optimizer}
 
-    def forward(self, *args, **kwargs):
-        return self.predictive(*args, **kwargs)
+    def forward(self, *args, mode="joint", **kwargs):
+        if mode == "prior":
+            with pyro.plate("importance", kwargs['P'], dim=-2):
+                tp = pyro.poutine.trace(self.elbo.model).get_trace(*args,
+                                                                   **kwargs)
+        else:
+            with pyro.poutine.uncondition():
+                tp, tq = self.elbo.elbo._get_vectorized_trace(self.elbo.model,
+                                                              self.elbo.guide,
+                                                              args, kwargs)
+        return tp.nodes['X']["fn"].base_dist.base_dist.loc
+
+    @torch.no_grad()
+    def test_step(self, batch, batch_idx, reset_fid=False):
+        data, _, indices = batch
+        data = data.to(self.device)
+        loss = self.elbo(data)
+        trace, tq = self.elbo.elbo._get_vectorized_trace(
+            self.elbo.model, self.elbo.guide, (data,),
+            {"B": len(data), "P": self.num_particles}
+        )
+        log_weight = utils.log_joint(trace) - utils.log_joint(tq)
+
+        metrics = {
+            "ess": metric.ess(trace, log_weight),
+            "log_joint": metric.log_joint(trace, log_weight),
+            "log_marginal": metric.log_marginal(trace, log_weight),
+            "loss": loss
+        }
+        if len(self.data.dims) == 3 and self.data.dims[0] == 3:
+            self.metrics['fid'] = self.metrics['fid'].to(self.device)
+            self.metrics['fid'].update(self.data.reverse_transform(data),
+                                       real=True)
+
+            B = len(data)
+            imgs = self.forward(data, B=B, mode="prior", P=self.num_particles)
+            imgs = self.data.reverse_transform(
+                imgs.view(self.num_particles*B, *self.data.dims)
+            ).clamp(0, 1)
+            self.metrics['fid'].update(imgs, real=False)
+
+            if reset_fid:
+                metrics["fid"] = self.metrics['fid'].compute()
+                self.metrics['fid'].reset()
+            self.metrics['fid'] = self.metrics['fid'].cpu()
+            del imgs
+        del data
+
+        return metrics
 
     def training_step(self, batch, batch_idx):
         """
