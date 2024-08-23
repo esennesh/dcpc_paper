@@ -167,10 +167,11 @@ class FashionMnistDataModule(L.LightningDataModule):
                           batch_size=self.batch_size)
 
 class BouncingMnistDataModule(L.LightningDataModule):
-    def __init__(self, data_dir, batch_size):
+    def __init__(self, data_dir, batch_size, dataset=BouncingMNIST):
         super().__init__()
         self.batch_size = batch_size
         self.data_dir = data_dir
+        self._dataset = dataset
         data_obs = glob.glob(self.data_dir + '/bmnist/ob-*.npy')
         self.dims = (np.load(data_obs[0]).shape[1], 1, 96, 96)
         self.transform = transforms.Compose([
@@ -179,7 +180,7 @@ class BouncingMnistDataModule(L.LightningDataModule):
         ])
 
     def setup(self, stage=None):
-        bouncingmnist_full = BouncingMNIST(self.data_dir, transform=self.transform)
+        bouncingmnist_full = self._dataset(self.data_dir, transform=self.transform)
         train_length = int(0.9 * len(bouncingmnist_full))
         valid_length = len(bouncingmnist_full) - train_length
         self.bmnist_train, self.bmnist_val = random_split(
