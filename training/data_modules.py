@@ -171,7 +171,8 @@ class BouncingMnistDataModule(L.LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
         self.data_dir = data_dir
-        self.dims = (20, 1, 96, 96)
+        data_obs = glob.glob(self.data_dir + '/bmnist/ob-*.npy')
+        self.dims = (np.load(data_obs[0]).shape[1], 1, 96, 96)
         self.transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Lambda(lambda t: t.mT)
