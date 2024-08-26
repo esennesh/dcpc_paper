@@ -83,9 +83,9 @@ class DigitsDecoder(MarkovKernel):
         )
 
         digits = digits.view(P*B*K, self._digit_side, self._digit_side)
-        digits = digits.transpose(-1, -2).unsqueeze(1)
+        digits = digits.unsqueeze(1)
         frames = F.grid_sample(digits, grid, mode='nearest',
-                               align_corners=False).squeeze(1).transpose(-1, -2)
+                               align_corners=False).squeeze(1)
         return frames.view(P, B, K, self._x_side, self._x_side)
 
     @property
