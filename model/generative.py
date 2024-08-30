@@ -23,11 +23,6 @@ class DigitPositions(MarkovKernel):
         super().__init__()
         self.register_buffer('loc', torch.zeros(z_where_dim))
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
-        self.dynamics = nn.Sequential(
-            nn.Linear(z_where_dim * num_digits, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, z_where_dim * num_digits)
-        )
         self.batch_shape = ()
         self._num_digits = num_digits
 
@@ -39,12 +34,9 @@ class DigitPositions(MarkovKernel):
         param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         scale = self.scale.expand(param_shape)
         if z_where is None:
-            loc = self.loc.expand(param_shape)
+            z_where = self.loc.expand(param_shape)
             scale = scale * 5
-        else:
-            P, B, K, D = z_where.shape
-            loc = self.dynamics(z_where.view(P, B, K * D)).view(P, B, K, D)
-        return dist.Normal(loc, scale).to_event(2)
+        return dist.Normal(z_where, scale).to_event(2)
 
 class DigitFeatures(MarkovKernel):
     def __init__(self, num_digits=3, z_what_dim=10):
@@ -91,9 +83,9 @@ class DigitsDecoder(MarkovKernel):
         )
 
         digits = digits.view(P*B*K, self._digit_side, self._digit_side)
-        digits = digits.transpose(-1, -2).unsqueeze(1)
+        digits = digits.unsqueeze(1)
         frames = F.grid_sample(digits, grid, mode='nearest',
-                               align_corners=False).squeeze(1).transpose(-1, -2)
+                               align_corners=False).squeeze(1)
         return frames.view(P, B, K, self._x_side, self._x_side)
 
     @property

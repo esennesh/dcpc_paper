@@ -136,15 +136,14 @@ class LightningPpc(L.LightningModule):
     Lightning module for Population Predictive Coding (PPC)
     """
     def __init__(self, graph: PpcGraphicalModel, data: L.LightningDataModule,
-                 cooldown=50, factor=0.9, lrp=1e-3, lrq=1e-3, num_particles=4,
-                 num_sweeps=1, patience=100, resampling=True):
+                 cooldown=50, factor=0.9, lr=1e-3, num_particles=4,
+                 num_sweeps=1, patience=100):
         super().__init__()
         self.save_hyperparameters(ignore=["data", "graph"])
         self.cooldown = cooldown
         self.data = data
         self.factor = factor
-        self.lrp = lrp
-        self.lrq = lrq
+        self.lr = lr
         self.graph = graph
         self.metrics = {}
         self.num_particles = num_particles
@@ -152,7 +151,6 @@ class LightningPpc(L.LightningModule):
         self.patience = patience
         self.predictive = Predictive(self.graph.model, guide=self.graph.guide,
                                      num_samples=self.num_particles)
-        self.resampling = resampling
 
         self._num_train = len(data.train_dataloader().dataset)
         self._num_valid = len(data.val_dataloader().dataset)
@@ -181,7 +179,7 @@ class LightningPpc(L.LightningModule):
     def _initialize_particles(self, batch, batch_idx, train=True):
         data, target, indices = batch
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
-            graph(lr=self.lrq, B=data.shape[0], mode="prior",
+            graph(B=data.shape[0], lr=self.lr/self.num_particles, mode="prior",
                   P=self.num_particles)
             self._save_particles(indices, train)
 
@@ -202,7 +200,7 @@ class LightningPpc(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.graph.parameters(), amsgrad=True,
-                                     lr=self.lrp, weight_decay=0.)
+                                     lr=self.lr, weight_decay=0.)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, cooldown=self.cooldown, factor=self.factor,
             patience=self.patience
@@ -220,12 +218,11 @@ class LightningPpc(L.LightningModule):
         checkpoint["particle_dicts"] = self.particles
 
     def ppc_step(self, data):
-        mode = "online" if not self.resampling else None
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             for _ in range(self.num_sweeps - 1):
-                graph(B=data.shape[0], lr=self.lrq, mode=mode,
+                graph(B=data.shape[0], lr=self.lr / self.num_particles,
                       P=self.num_particles)
-            return graph(B=data.shape[0], lr=self.lrq, mode=mode,
+            return graph(B=data.shape[0], lr=self.lr / self.num_particles,
                          P=self.num_particles)
 
     @torch.no_grad()
@@ -271,11 +268,7 @@ class LightningPpc(L.LightningModule):
         data, _, indices = batch
         self._load_particles(indices, train=True)
         trace, log_weight = self.ppc_step(data)
-        if self.resampling:
-            loss = F.softmax(log_weight, dim=0).detach() * log_weight
-            loss = loss.sum(dim=0)
-        else:
-            loss = log_weight
+        loss = (F.softmax(log_weight, dim=0).detach() * log_weight).sum(dim=0)
         loss = -loss.mean()
         self._save_particles(indices, train=True)
 
@@ -291,11 +284,7 @@ class LightningPpc(L.LightningModule):
         data, _, indices = batch
         self._load_particles(indices, train=False)
         trace, log_weight = self.ppc_step(data)
-        if self.resampling:
-            loss = F.softmax(log_weight, dim=0).detach() * log_weight
-            loss = loss.sum(dim=0)
-        else:
-            loss = log_weight
+        loss = (F.softmax(log_weight, dim=0).detach() * log_weight).sum(dim=0)
         loss = -loss.mean()
         self._save_particles(indices, train=False)
 
