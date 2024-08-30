@@ -27,8 +27,7 @@
         "args": {
             "cooldown": 50,
             "factor": 0.9,
-            "lrp": 1e-4,
-            "lrq": 1e-4,
+            "lr": 1e-4,
             "num_particles": 10,
             "num_sweeps": 5,
             "patience": 100
