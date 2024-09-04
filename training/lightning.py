@@ -220,10 +220,8 @@ class LightningPpc(L.LightningModule):
     def ppc_step(self, data):
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             for _ in range(self.num_sweeps - 1):
-                graph(B=data.shape[0], lr=self.lr / self.num_particles,
-                      P=self.num_particles)
-            return graph(B=data.shape[0], lr=self.lr / self.num_particles,
-                         P=self.num_particles)
+                graph(B=data.shape[0], lr=self.lr, P=self.num_particles)
+            return graph(B=data.shape[0], lr=self.lr, P=self.num_particles)
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx, reset_fid=False):
