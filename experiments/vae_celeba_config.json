@@ -47,7 +47,7 @@
         "args": {
           "default_root_dir": "saved/",
           "devices": [7],
-          "max_epochs": 150,
+          "max_epochs": 4500,
           "min_epochs": 1
         }
     }
