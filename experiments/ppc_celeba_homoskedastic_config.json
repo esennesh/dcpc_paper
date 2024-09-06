@@ -4,6 +4,7 @@
     "arch": {
         "type": "GeneratorPpc",
         "args": {
+            "discretize": false,
             "heteroskedastic": false,
             "z_dim": 64
         }
@@ -31,12 +32,11 @@
         "args": {
             "cooldown": 10,
             "factor": 0.9,
-            "lrp": 1e-3,
-            "lrq": 1e-4,
+            "lr": 1e-3,
+            "lrq": 1e-5,
             "num_particles": 10,
             "num_sweeps": 1,
-            "patience": 50,
-            "resampling": true
+            "patience": 50
         }
     },
     "logger": {
