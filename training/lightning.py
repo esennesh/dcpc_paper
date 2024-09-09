@@ -67,7 +67,10 @@ class LightningSvi(L.LightningModule):
                 tp, tq = self.elbo.elbo._get_vectorized_trace(self.elbo.model,
                                                               self.elbo.guide,
                                                               args, kwargs)
-        return tp.nodes['X']["fn"].base_dist.base_dist.loc
+        likelihood = tp.nodes['X']["fn"]
+        while hasattr(likelihood, "base_dist"):
+            likelihood = likelihood.base_dist
+        return likelihood.mean
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx, reset_fid=False):
