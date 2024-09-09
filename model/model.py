@@ -227,7 +227,10 @@ class ConvolutionalVae(ImportanceModel):
         zs = z.to(device=self.prior.loc.device)
         model = pyro.condition(self.model, data={"X": None, "z": zs.view(P, B, -1)})
         trace = pyro.poutine.trace(model).get_trace(*args, B=B, P=P)
-        return trace.nodes["X"]["fn"].base_dist.base_dist.loc
+        likelihood = trace.nodes['X']["fn"]
+        while hasattr(likelihood, "base_dist"):
+            likelihood = likelihood.base_dist
+        return likelihood.mean
 
 class SequentialMemoryPpc(PpcGraphicalModel):
     def __init__(self, dims, z_dim=480, u_dim=0, nonlinearity=nn.Tanh):
