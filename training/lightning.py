@@ -146,7 +146,7 @@ class LightningPpc(L.LightningModule):
         self.cooldown = cooldown
         self.data = data
         self.factor = factor
-        self.lr = lr
+        self._lr = lr
         self._lrq = lrq
         self.graph = graph
         self.metrics = {}
@@ -214,6 +214,13 @@ class LightningPpc(L.LightningModule):
 
     def forward(self, *args, **kwargs):
         return self.predictive(*args, **kwargs)
+
+    @property
+    def lr(self):
+        scheduler = self.lr_schedulers()
+        if scheduler is None:
+            return self._lr
+        return scheduler.get_last_lr()[0]
 
     @property
     def lrq(self):
