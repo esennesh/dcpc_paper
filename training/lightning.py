@@ -217,10 +217,10 @@ class LightningPpc(L.LightningModule):
 
     @property
     def lr(self):
-        scheduler = self.lr_schedulers()
-        if scheduler is None:
+        try:
+            return self.lr_schedulers().get_last_lr()[0]
+        except:
             return self._lr
-        return scheduler.get_last_lr()[0]
 
     @property
     def lrq(self):
