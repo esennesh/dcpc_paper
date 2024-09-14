@@ -74,7 +74,7 @@ class DigitsDecoder(MarkovKernel):
     def blit(self, digits, z_where):
         P, B, K, _ = z_where.shape
         affine_p1 = self.scale.repeat(P, B, K, 1, 1)
-        affine_p2 = soft_clamp(z_where.unsqueeze(-1) * self.translate, -1, 1)
+        affine_p2 = z_where.unsqueeze(-1) * self.translate
         affine_p2[:, :, :, 0, :] = -affine_p2[:, :, :, 0, :]
         grid = F.affine_grid(
             torch.cat((affine_p1, affine_p2), -1).view(P*B*K, 2, 3),
@@ -94,11 +94,7 @@ class DigitsDecoder(MarkovKernel):
 
     def forward(self, what, where, obs=None) -> dist.Distribution:
         P, B, K, _ = where.shape
-        if what not in self._digits:
-            self._digits = {
-                what: self.decoder(what)
-            }
-        digits = self._digits[what]
+        digits = self.decoder(what)
         frames = soft_clamp(self.blit(digits, where).sum(dim=-3), 0., 1.)
         return dist.ContinuousBernoulli(frames).to_event(2)
 
