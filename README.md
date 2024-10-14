@@ -1,6 +1,6 @@
 # Divide-and-Conquer Predictive Coding: a structured Bayesian inference algorithm
 
-This repository is the official implementation of [Divide-and-Conquer Predictive Coding](https://arxiv.org/abs/2408.05834).
+This repository is the official implementation of [Divide-and-Conquer Predictive Coding](https://arxiv.org/abs/2408.05834). As the paper's subtitle says, Divide & Conquer Predictive Coding (DCPC) is an algorithm approximating [Bayesian inference](https://seeing-theory.brown.edu/bayesian-inference/index.html) for (directed, acyclic) probabilistic graphical models according to the [predictive coding](https://www.simonsfoundation.org/2021/06/03/the-challenges-of-proving-predictive-coding/) theory of inference in the brain. Over and above previous predictive coding algorithms, DCPC allows a free-form particle approximation to the posterior distribution and can sample from correlated posteriors by collecting prediction errors from neighboring random variables. We implemented DCPC in the [Pyro](https://pyro.ai) probabilistic programming language, with [PyTorch Lightning](https://lightning.ai) for training.
 
 ![Divide-and-conquer PC approximates the joint posterior with bottom-up and recurrent errors.](/figures/dcpc_structure.png "DCPC's overall structure")
 
