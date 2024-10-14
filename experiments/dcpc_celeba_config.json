@@ -1,8 +1,8 @@
 {
-    "name": "Heteroskedastic_CelebA_Ppc",
+    "name": "Heteroskedastic_CelebA_Dcpc",
 
     "arch": {
-        "type": "GeneratorPpc",
+        "type": "GeneratorDcpc",
         "args": {
             "heteroskedastic": true,
             "z_dim": 40,
@@ -29,7 +29,7 @@
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningDcpc",
         "args": {
             "cooldown": 10,
             "factor": 0.9,
