@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, MarkovKernelApplication
 from .generative import *
-from .inference import PpcGraphicalModel, asvi, mlp_amortizer
+from .inference import DcpcGraphicalModel, asvi, mlp_amortizer
 
 class BouncingMnistAsvi(ImportanceModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
@@ -74,7 +74,7 @@ class BouncingMnistAsvi(ImportanceModel):
                                                 batch_shape=(B,))
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
-class MnistPpc(PpcGraphicalModel):
+class MnistDcpc(DcpcGraphicalModel):
     def __init__(self, x_dims, z_dims=[20, 128, 256]):
         super().__init__()
         self.prior = GaussianPrior(z_dims[0])
@@ -94,7 +94,7 @@ class MnistPpc(PpcGraphicalModel):
     def conditioner(self, data):
         return {"X": data}
 
-class BouncingMnistPpc(PpcGraphicalModel):
+class BouncingMnistDcpc(DcpcGraphicalModel):
     def __init__(self, dims, digit_side=28, hidden_dim=400, num_digits=3,
                  z_what_dim=10, z_where_dim=2):
         super().__init__()
@@ -126,7 +126,7 @@ class BouncingMnistPpc(PpcGraphicalModel):
         T = xs.shape[1]
         return {"X__%d" % t: xs[:, t] for t in range(T)}
 
-class DiffusionPpc(PpcGraphicalModel):
+class DiffusionDcpc(DcpcGraphicalModel):
     def __init__(self, dims, dim_mults=(1, 2, 4, 8), unet="Unet",
                  flash_attn=True, hidden_dim=64, T=100):
         super().__init__()
@@ -149,7 +149,7 @@ class DiffusionPpc(PpcGraphicalModel):
     def conditioner(self, data):
         return {"X__0": data}
 
-class GeneratorPpc(PpcGraphicalModel):
+class GeneratorDcpc(DcpcGraphicalModel):
     def __init__(self, dims, z_dim=40, heteroskedastic=True, hidden_dim=256,
                  discretize=True):
         super().__init__()
@@ -232,7 +232,7 @@ class ConvolutionalVae(ImportanceModel):
             likelihood = likelihood.base_dist
         return likelihood.mean
 
-class SequentialMemoryPpc(PpcGraphicalModel):
+class SequentialMemoryDcpc(DcpcGraphicalModel):
     def __init__(self, dims, z_dim=480, u_dim=0, nonlinearity=nn.Tanh):
         super().__init__()
         self._num_times, C, W, H = dims
