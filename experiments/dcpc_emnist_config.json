@@ -1,8 +1,8 @@
 {
-    "name": "EMnist_Ppc",
+    "name": "EMnist_Dcpc",
 
     "arch": {
-        "type": "MnistPpc",
+        "type": "MnistDcpc",
         "args": {}
     },
     "checkpoint": {
@@ -23,7 +23,7 @@
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningDcpc",
         "args": {
             "cooldown": 10,
             "factor": 0.9,
