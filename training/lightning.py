@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import torchmetrics
 from torchvision.utils import make_grid
 from model import metric
-from model.inference import ParticleDict, PpcGraphicalModel
+from model.inference import ParticleDict, DcpcGraphicalModel
 from utils import inf_loop, MetricTracker
 import utils
 
@@ -134,11 +134,11 @@ class LightningSvi(L.LightningModule):
         self.log("valid/loss", loss, sync_dist=True)
         return loss
 
-class LightningPpc(L.LightningModule):
+class LightningDcpc(L.LightningModule):
     """
     Lightning module for Population Predictive Coding (PPC)
     """
-    def __init__(self, graph: PpcGraphicalModel, data: L.LightningDataModule,
+    def __init__(self, graph: DcpcGraphicalModel, data: L.LightningDataModule,
                  cooldown=50, factor=0.9, lr=1e-3, lrq=None, num_particles=4,
                  num_sweeps=1, patience=100):
         super().__init__()
@@ -232,7 +232,7 @@ class LightningPpc(L.LightningModule):
     def on_save_checkpoint(self, checkpoint):
         checkpoint["particle_dicts"] = self.particles
 
-    def ppc_step(self, data):
+    def dcpc_step(self, data):
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             for _ in range(self.num_sweeps - 1):
                 graph(B=data.shape[0], lr=self.lrq, P=self.num_particles)
@@ -245,7 +245,7 @@ class LightningPpc(L.LightningModule):
         self.graph.clear()
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             graph(B=data.shape[0], mode="prior", P=self.num_particles)
-        trace, log_weight = self.ppc_step(data)
+        trace, log_weight = self.dcpc_step(data)
         self.graph.clear()
 
         metrics = {
@@ -280,7 +280,7 @@ class LightningPpc(L.LightningModule):
     def training_step(self, batch, batch_idx):
         data, _, indices = batch
         self._load_particles(indices, train=True)
-        trace, log_weight = self.ppc_step(data)
+        trace, log_weight = self.dcpc_step(data)
         loss = (F.softmax(log_weight, dim=0).detach() * log_weight).sum(dim=0)
         loss = -loss.mean()
         self._save_particles(indices, train=True)
@@ -296,7 +296,7 @@ class LightningPpc(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         data, _, indices = batch
         self._load_particles(indices, train=False)
-        trace, log_weight = self.ppc_step(data)
+        trace, log_weight = self.dcpc_step(data)
         loss = (F.softmax(log_weight, dim=0).detach() * log_weight).sum(dim=0)
         loss = -loss.mean()
         self._save_particles(indices, train=False)
