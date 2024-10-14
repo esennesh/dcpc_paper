@@ -1,8 +1,8 @@
 {
-    "name": "FlowersDiffusion_Ppc",
+    "name": "FlowersDiffusion_Dcpc",
 
     "arch": {
-        "type": "DiffusionPpc",
+        "type": "DiffusionDcpc",
         "args": {
             "flash_attn": true,
             "hidden_dim": 32,
@@ -29,7 +29,7 @@
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningDcpc",
         "args": {
             "cooldown": 50,
             "factor": 0.9,
