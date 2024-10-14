@@ -1,8 +1,8 @@
 {
-    "name": "MiniBouncingMnist_Ppc",
+    "name": "MiniBouncingMnist_Dcpc",
 
     "arch": {
-        "type": "BouncingMnistPpc",
+        "type": "BouncingMnistDcpc",
         "args": {}
     },
     "checkpoint": {
@@ -23,7 +23,7 @@
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningDcpc",
         "args": {
             "cooldown": 50,
             "factor": 0.9,
