@@ -1,38 +1,36 @@
 {
-    "name": "SequentialMemory_Ppc",
+    "name": "FashionMnist_Dcpc",
 
     "arch": {
-        "type": "SequentialMemoryPpc",
+        "type": "MnistDcpc",
         "args": {}
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
         "args": {
             "auto_insert_metric_name": false,
-            "every_n_epochs": 10,
+            "every_n_epochs": 5,
             "filename": "checkpoint_{epoch}",
             "mode": "min",
             "monitor": "valid/loss"
         }
     },
     "data_module": {
-        "type": "CifarMemoryDataModule",
-        "args": {
+        "type": "FashionMnistDataModule",
+        "args":{
             "data_dir": "data/",
-            "batch_size": 128,
-            "num_seqs": 100,
-            "seq_len": 7
+            "batch_size": 4096
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningDcpc",
         "args": {
-            "cooldown": 50,
+            "cooldown": 10,
             "factor": 0.9,
-            "lr": 5e-4,
-            "num_particles": 4,
-            "num_sweeps": 1,
-            "patience": 100
+            "lr": 5e-2,
+            "num_particles": 2,
+            "num_sweeps": 2,
+            "patience": 50
         }
     },
     "logger": {
@@ -43,8 +41,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": [2,3,4,5,6,7],
-          "max_epochs": 600,
+          "devices": 1,
+          "max_epochs": 2000,
           "min_epochs": 1
         }
     }

@@ -84,7 +84,7 @@ class ParticleDict(nn.ParameterDict):
             self[key].scatter_(self._batch_dim, indices.expand(val.shape),
                                val.to(self[key].device))
 
-class PpcGraphicalModel(GraphicalModel):
+class DcpcGraphicalModel(GraphicalModel):
     def __init__(self, beta=0.99):
         super().__init__()
         self._beta = beta

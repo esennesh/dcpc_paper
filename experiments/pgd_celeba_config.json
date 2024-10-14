@@ -2,7 +2,7 @@
     "name": "Homoskedastic_CelebA_Pgd",
 
     "arch": {
-        "type": "GeneratorPpc",
+        "type": "GeneratorDcpc",
         "args": {
             "heteroskedastic": false,
             "z_dim": 64
@@ -27,7 +27,7 @@
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningDcpc",
         "args": {
             "cooldown": 10,
             "factor": 0.9,

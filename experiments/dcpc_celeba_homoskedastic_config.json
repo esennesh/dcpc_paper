@@ -1,35 +1,41 @@
 {
-    "name": "FashionMnist_Ppc",
+    "name": "Homoskedastic_CelebA_Dcpc",
 
     "arch": {
-        "type": "MnistPpc",
-        "args": {}
+        "type": "GeneratorDcpc",
+        "args": {
+            "discretize": false,
+            "heteroskedastic": false,
+            "z_dim": 64
+        }
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
         "args": {
             "auto_insert_metric_name": false,
-            "every_n_epochs": 5,
+            "every_n_epochs": 10,
             "filename": "checkpoint_{epoch}",
             "mode": "min",
             "monitor": "valid/loss"
         }
     },
     "data_module": {
-        "type": "FashionMnistDataModule",
+        "type": "CelebADataModule",
         "args":{
             "data_dir": "data/",
-            "batch_size": 4096
+            "batch_size": 128,
+            "side": 32
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningDcpc",
         "args": {
             "cooldown": 10,
             "factor": 0.9,
-            "lr": 5e-2,
-            "num_particles": 2,
-            "num_sweeps": 2,
+            "lr": 1e-3,
+            "lrq": 1e-5,
+            "num_particles": 10,
+            "num_sweeps": 1,
             "patience": 50
         }
     },
@@ -41,8 +47,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": 1,
-          "max_epochs": 2000,
+          "devices": [7],
+          "max_epochs": 100,
           "min_epochs": 1
         }
     }
