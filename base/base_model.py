@@ -43,8 +43,6 @@ class ImportanceModel(BaseModel):
         with pyro.plate_stack("importance", (P, B)):
             if mode == "prior":
                 return self.model(*args, **kwargs)
-            else:
-                kwargs["mode"] = mode
             return utils.importance(self.model, self.guide, *args, **kwargs)
 
     @abstractmethod
@@ -64,7 +62,8 @@ class MarkovKernel(pyro.nn.PyroModule):
         raise NotImplementedError
 
     @abstractmethod
-    def forward(self, *args, **kwargs) -> pyro.distributions.Distribution:
+    def forward(self, *args, obs=None,
+                **kwargs) -> pyro.distributions.Distribution:
         """
         Forward pass logic
 

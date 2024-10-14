@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import torchmetrics
 from torchvision.utils import make_grid
 from model import metric
-from model.inference import ParticleDict, PpcGraphicalModel
+from model.inference import ParticleDict, DcpcGraphicalModel
 from utils import inf_loop, MetricTracker
 import utils
 
@@ -19,6 +19,7 @@ class LightningSvi(L.LightningModule):
                  patience=100):
         super().__init__()
         self.cooldown = cooldown
+        self.data = data
         self.factor = factor
         self.importance = importance
         self.lr = lr
@@ -36,7 +37,14 @@ class LightningSvi(L.LightningModule):
         self.elbo = elbo(self.importance.model, self.importance.guide)
         self.predictive = Predictive(self.importance.model,
                                      guide=self.importance.guide,
-                                     num_samples=self.num_particles)
+                                     num_samples=self.num_particles,
+                                     parallel=True)
+        if len(self.data.dims) == 3 and self.data.dims[0] == 3:
+            self.metrics = {
+                "fid": torchmetrics.image.fid.FrechetInceptionDistance(
+                    input_img_size=self.data.dims, normalize=True,
+                )
+            }
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.importance.parameters(),
@@ -49,8 +57,58 @@ class LightningSvi(L.LightningModule):
         return {"lr_scheduler": lr_scheduler, "monitor": "valid/loss",
                 "optimizer": optimizer}
 
-    def forward(self, *args, **kwargs):
-        return self.predictive(*args, **kwargs)
+    def forward(self, *args, mode="joint", **kwargs):
+        if mode == "prior":
+            with pyro.plate("importance", kwargs['P'], dim=-2):
+                tp = pyro.poutine.trace(self.elbo.model).get_trace(*args,
+                                                                   **kwargs)
+        else:
+            with pyro.poutine.uncondition():
+                tp, tq = self.elbo.elbo._get_vectorized_trace(self.elbo.model,
+                                                              self.elbo.guide,
+                                                              args, kwargs)
+        likelihood = tp.nodes['X']["fn"]
+        while hasattr(likelihood, "base_dist"):
+            likelihood = likelihood.base_dist
+        return likelihood.mean
+
+    @torch.no_grad()
+    def test_step(self, batch, batch_idx, reset_fid=False):
+        data, _, indices = batch
+        data = data.to(self.device)
+        loss = self.elbo(data)
+        trace, tq = self.elbo.elbo._get_vectorized_trace(
+            self.elbo.model, self.elbo.guide, (data,),
+            {"B": len(data), "P": self.num_particles}
+        )
+        log_weight = utils.log_joint(trace) - utils.log_joint(tq)
+
+        metrics = {
+            "ess": metric.ess(trace, log_weight),
+            "log_joint": metric.log_joint(trace, log_weight),
+            "log_marginal": metric.log_marginal(trace, log_weight),
+            "loss": loss
+        }
+        if len(self.data.dims) == 3 and self.data.dims[0] == 3:
+            self.metrics['fid'] = self.metrics['fid'].to(self.device)
+            self.metrics['fid'].update(self.data.reverse_transform(data),
+                                       real=True)
+
+            B = len(data)
+            imgs = self.forward(data, B=B, mode="prior", P=self.num_particles)
+            imgs = self.data.reverse_transform(
+                imgs.view(self.num_particles*B, *self.data.dims)
+            ).clamp(0, 1)
+            self.metrics['fid'].update(imgs, real=False)
+
+            if reset_fid:
+                metrics["fid"] = self.metrics['fid'].compute()
+                self.metrics['fid'].reset()
+            self.metrics['fid'] = self.metrics['fid'].cpu()
+            del imgs
+        del data
+
+        return metrics
 
     def training_step(self, batch, batch_idx):
         """
@@ -76,20 +134,20 @@ class LightningSvi(L.LightningModule):
         self.log("valid/loss", loss, sync_dist=True)
         return loss
 
-class LightningPpc(L.LightningModule):
+class LightningDcpc(L.LightningModule):
     """
     Lightning module for Population Predictive Coding (PPC)
     """
-    def __init__(self, graph: PpcGraphicalModel, data: L.LightningDataModule,
-                 cooldown=50, factor=0.9, lrp=1e-3, lrq=1e-3, num_particles=4,
-                 num_sweeps=1, patience=100, resampling=True):
+    def __init__(self, graph: DcpcGraphicalModel, data: L.LightningDataModule,
+                 cooldown=50, factor=0.9, lr=1e-3, lrq=None, num_particles=4,
+                 num_sweeps=1, patience=100):
         super().__init__()
         self.save_hyperparameters(ignore=["data", "graph"])
         self.cooldown = cooldown
         self.data = data
         self.factor = factor
-        self.lrp = lrp
-        self.lrq = lrq
+        self._lr = lr
+        self._lrq = lrq
         self.graph = graph
         self.metrics = {}
         self.num_particles = num_particles
@@ -97,7 +155,6 @@ class LightningPpc(L.LightningModule):
         self.patience = patience
         self.predictive = Predictive(self.graph.model, guide=self.graph.guide,
                                      num_samples=self.num_particles)
-        self.resampling = resampling
 
         self._num_train = len(data.train_dataloader().dataset)
         self._num_valid = len(data.val_dataloader().dataset)
@@ -126,7 +183,7 @@ class LightningPpc(L.LightningModule):
     def _initialize_particles(self, batch, batch_idx, train=True):
         data, target, indices = batch
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
-            graph(lr=self.lrq, B=data.shape[0], mode="prior",
+            graph(B=data.shape[0], lr=self.lrq, mode="prior",
                   P=self.num_particles)
             self._save_particles(indices, train)
 
@@ -147,7 +204,7 @@ class LightningPpc(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.graph.parameters(), amsgrad=True,
-                                     lr=self.lrp, weight_decay=0.)
+                                     lr=self.lr, weight_decay=0.)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, cooldown=self.cooldown, factor=self.factor,
             patience=self.patience
@@ -158,20 +215,28 @@ class LightningPpc(L.LightningModule):
     def forward(self, *args, **kwargs):
         return self.predictive(*args, **kwargs)
 
+    @property
+    def lr(self):
+        try:
+            return self.lr_schedulers().get_last_lr()[0]
+        except:
+            return self._lr
+
+    @property
+    def lrq(self):
+        return self._lrq if self._lrq is not None else self.lr
+
     def on_load_checkpoint(self, checkpoint):
         self.particles = checkpoint["particle_dicts"]
 
     def on_save_checkpoint(self, checkpoint):
         checkpoint["particle_dicts"] = self.particles
 
-    def ppc_step(self, data):
-        mode = "online" if not self.resampling else None
+    def dcpc_step(self, data):
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             for _ in range(self.num_sweeps - 1):
-                graph(B=data.shape[0], lr=self.lrq, mode=mode,
-                      P=self.num_particles)
-            return graph(B=data.shape[0], lr=self.lrq, mode=mode,
-                         P=self.num_particles)
+                graph(B=data.shape[0], lr=self.lrq, P=self.num_particles)
+            return graph(B=data.shape[0], lr=self.lrq, P=self.num_particles)
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx, reset_fid=False):
@@ -180,7 +245,7 @@ class LightningPpc(L.LightningModule):
         self.graph.clear()
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             graph(B=data.shape[0], mode="prior", P=self.num_particles)
-        trace, log_weight = self.ppc_step(data)
+        trace, log_weight = self.dcpc_step(data)
         self.graph.clear()
 
         metrics = {
@@ -215,12 +280,8 @@ class LightningPpc(L.LightningModule):
     def training_step(self, batch, batch_idx):
         data, _, indices = batch
         self._load_particles(indices, train=True)
-        trace, log_weight = self.ppc_step(data)
-        if self.resampling:
-            loss = F.softmax(log_weight, dim=0).detach() * log_weight
-            loss = loss.sum(dim=0)
-        else:
-            loss = log_weight
+        trace, log_weight = self.dcpc_step(data)
+        loss = (F.softmax(log_weight, dim=0).detach() * log_weight).sum(dim=0)
         loss = -loss.mean()
         self._save_particles(indices, train=True)
 
@@ -235,12 +296,8 @@ class LightningPpc(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         data, _, indices = batch
         self._load_particles(indices, train=False)
-        trace, log_weight = self.ppc_step(data)
-        if self.resampling:
-            loss = F.softmax(log_weight, dim=0).detach() * log_weight
-            loss = loss.sum(dim=0)
-        else:
-            loss = log_weight
+        trace, log_weight = self.dcpc_step(data)
+        loss = (F.softmax(log_weight, dim=0).detach() * log_weight).sum(dim=0)
         loss = -loss.mean()
         self._save_particles(indices, train=False)
 

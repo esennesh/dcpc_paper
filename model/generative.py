@@ -23,11 +23,6 @@ class DigitPositions(MarkovKernel):
         super().__init__()
         self.register_buffer('loc', torch.zeros(z_where_dim))
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
-        self.dynamics = nn.Sequential(
-            nn.Linear(z_where_dim * num_digits, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, z_where_dim * num_digits)
-        )
         self.batch_shape = ()
         self._num_digits = num_digits
 
@@ -35,16 +30,13 @@ class DigitPositions(MarkovKernel):
     def event_dim(self):
         return 2
 
-    def forward(self, z_where) -> dist.Distribution:
+    def forward(self, z_where, obs=None) -> dist.Distribution:
         param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         scale = self.scale.expand(param_shape)
         if z_where is None:
-            loc = self.loc.expand(param_shape)
+            z_where = self.loc.expand(param_shape)
             scale = scale * 5
-        else:
-            P, B, K, D = z_where.shape
-            loc = self.dynamics(z_where.view(P, B, K * D)).view(P, B, K, D)
-        return dist.Normal(loc, scale).to_event(2)
+        return dist.Normal(z_where, scale).to_event(2)
 
 class DigitFeatures(MarkovKernel):
     def __init__(self, num_digits=3, z_what_dim=10):
@@ -58,7 +50,7 @@ class DigitFeatures(MarkovKernel):
     def event_dim(self):
         return 2
 
-    def forward(self) -> dist.Distribution:
+    def forward(self, obs=None) -> dist.Distribution:
         dist_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
 
@@ -82,7 +74,7 @@ class DigitsDecoder(MarkovKernel):
     def blit(self, digits, z_where):
         P, B, K, _ = z_where.shape
         affine_p1 = self.scale.repeat(P, B, K, 1, 1)
-        affine_p2 = soft_clamp(z_where.unsqueeze(-1) * self.translate, -1, 1)
+        affine_p2 = z_where.unsqueeze(-1) * self.translate
         affine_p2[:, :, :, 0, :] = -affine_p2[:, :, :, 0, :]
         grid = F.affine_grid(
             torch.cat((affine_p1, affine_p2), -1).view(P*B*K, 2, 3),
@@ -91,22 +83,18 @@ class DigitsDecoder(MarkovKernel):
         )
 
         digits = digits.view(P*B*K, self._digit_side, self._digit_side)
-        digits = digits.transpose(-1, -2).unsqueeze(1)
+        digits = digits.unsqueeze(1)
         frames = F.grid_sample(digits, grid, mode='nearest',
-                               align_corners=False).squeeze(1).transpose(-1, -2)
+                               align_corners=False).squeeze(1)
         return frames.view(P, B, K, self._x_side, self._x_side)
 
     @property
     def event_dim(self):
         return 2
 
-    def forward(self, what, where) -> dist.Distribution:
+    def forward(self, what, where, obs=None) -> dist.Distribution:
         P, B, K, _ = where.shape
-        if what not in self._digits:
-            self._digits = {
-                what: self.decoder(what)
-            }
-        digits = self._digits[what]
+        digits = self.decoder(what)
         frames = soft_clamp(self.blit(digits, where).sum(dim=-3), 0., 1.)
         return dist.ContinuousBernoulli(frames).to_event(2)
 
@@ -125,7 +113,7 @@ class DigitDecoder(MarkovKernel):
     def event_dim(self):
         return 3
 
-    def forward(self, what, x=None) -> dist.Distribution:
+    def forward(self, what, obs=None) -> dist.Distribution:
         P, B, _, _ = what.shape
         estimate = self.decoder(what).view(P, B, 1, self._digit_side,
                                            self._digit_side)
@@ -147,7 +135,7 @@ class GaussianPrior(MarkovKernel):
     def event_dim(self):
         return 1
 
-    def forward(self) -> dist.Distribution:
+    def forward(self, obs=None) -> dist.Distribution:
         loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
@@ -167,7 +155,7 @@ class ConditionalGaussian(MarkovKernel):
     def event_dim(self):
         return 1
 
-    def forward(self, hs: torch.Tensor) -> dist.Distribution:
+    def forward(self, hs: torch.Tensor, obs=None) -> dist.Distribution:
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
         return dist.MultivariateNormal(self.decoder(hs), scale_tril=scale)
@@ -191,7 +179,7 @@ class GaussianSsm(MarkovKernel):
     def event_dim(self):
         return 1
 
-    def forward(self, z: torch.Tensor, u=None) -> dist.Distribution:
+    def forward(self, z: torch.Tensor, u=None, obs=None) -> dist.Distribution:
         assert (self._u_dim > 0) == (u is not None)
 
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
@@ -220,7 +208,7 @@ class GaussianEmission(MarkovKernel):
     def event_dim(self):
         return 1
 
-    def forward(self, z: torch.Tensor, u=None) -> dist.Distribution:
+    def forward(self, z: torch.Tensor, u=None, obs=None) -> dist.Distribution:
         assert (self._u_dim > 0) == (u is not None)
 
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
@@ -244,7 +232,7 @@ class MlpBernoulliLikelihood(MarkovKernel):
     def event_dim(self):
         return 1 + len(self._out_shape)
 
-    def forward(self, hs: torch.Tensor) -> dist.Distribution:
+    def forward(self, hs: torch.Tensor, obs=None) -> dist.Distribution:
         P, B, _ = hs.shape
         logits = self.decoder(hs).view(P, B, 1, *self._out_shape)
         return dist.ContinuousBernoulli(logits=logits).to_event(self.event_dim)
@@ -260,7 +248,7 @@ class DiffusionPrior(MarkovKernel):
     def event_dim(self):
         return 3
 
-    def forward(self) -> dist.Distribution:
+    def forward(self, obs=None) -> dist.Distribution:
         loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
         scale = self.scale.expand(*self.batch_shape, *self.scale.shape)
         return dist.Normal(loc, scale).to_event(3)
@@ -287,7 +275,7 @@ class DiffusionStep(MarkovKernel):
     def event_dim(self):
         return 3
 
-    def forward(self, xs_prev: torch.Tensor, t=0) -> dist.Distribution:
+    def forward(self, xs_prev: torch.Tensor, t=0, obs=None):
         P, B, C, W, H = xs_prev.shape
         score = self.unet(xs_prev.view(P*B, C, W, H),
                           torch.tensor(t, device=xs_prev.device,
@@ -297,6 +285,8 @@ class DiffusionStep(MarkovKernel):
         alpha, alpha_bar = self.alphas[t], self.alpha_bars[t]
         loc = 1/alpha.sqrt() * (xs_prev -
                                 (beta / (1. - alpha_bar).sqrt()) * score)
+        if t == 0:
+            return DiscretizedGaussian(loc, beta).to_event(3)
         return dist.Normal(loc, beta).to_event(3)
 
 class ConvolutionalEncoder(pnn.PyroModule):
@@ -307,18 +297,32 @@ class ConvolutionalEncoder(pnn.PyroModule):
         self._img_side = img_side
         self._z_dim = z_dim
 
-        self.convs = nn.Sequential(
-            nn.Conv2d(channels, 32, 4, 2, 1), # 3 x 64 x 64 -> 32 x 32 x 32
-            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(32, 32, 4, 2, 1), # 32 x 32 x 32 -> 32 x 16 x 16
-            nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(32, 64, 4, 2, 1), # 32 x 16 x 16 -> 64 x 8 x 8
-            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(64, 64, 4, 2, 1), # 64 x 8 x 8 -> 64 x 4 x 4
-            nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
-            nn.Conv2d(64, hidden_dim, 4, 1, 0), # 64 x 4 x 4 -> 256 x 1 x 1
-            nn.BatchNorm2d(hidden_dim, track_running_stats=False), nn.SiLU(),
-        )
+        if img_side == 64:
+            self.convs = nn.Sequential(
+                nn.Conv2d(channels, 32, 4, 2, 1), # 3 x 64 x 64 -> 32 x 32 x 32
+                nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(32, 32, 4, 2, 1), # 32 x 32 x 32 -> 32 x 16 x 16
+                nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(32, 64, 4, 2, 1), # 32 x 16 x 16 -> 64 x 8 x 8
+                nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(64, 64, 4, 2, 1), # 64 x 8 x 8 -> 64 x 4 x 4
+                nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(64, hidden_dim, 4, 1, 0), # 64 x 4 x 4 -> 256 x 1 x 1
+                nn.BatchNorm2d(hidden_dim, track_running_stats=False), nn.SiLU(),
+            )
+        elif img_side == 32:
+            self.convs = nn.Sequential(
+                nn.Conv2d(channels, 32, 4, 2, 1), # 3 x 32 x 32 -> 32 x 16 x 16
+                nn.BatchNorm2d(32, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(32, 64, 4, 2, 1), # 32 x 16 x 16 -> 64 x 8 x 8
+                nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(64, 64, 4, 2, 1), # 64 x 8 x 8 -> 64 x 4 x 4
+                nn.BatchNorm2d(64, track_running_stats=False), nn.SiLU(),
+                nn.Conv2d(64, hidden_dim, 4, 1, 0), # 64 x 4 x 4 -> 256 x 1 x 1
+                nn.BatchNorm2d(hidden_dim, track_running_stats=False), nn.SiLU(),
+            )
+        else:
+            raise NotImplementedError()
         self.linear = nn.Linear(hidden_dim, z_dim * 2)
 
     def forward(self, xs: torch.Tensor) -> dist.Distribution:
@@ -355,26 +359,35 @@ class ConvolutionalDecoder(MarkovKernel):
             nn.ConvTranspose2d(32, channels, 4, 2, 1),
             nonlinearity()
         )
+        self.register_buffer('scale', torch.ones((), requires_grad=False))
 
     @property
     def event_dim(self):
         return 3
 
-    def forward(self, zs: torch.Tensor) -> dist.Distribution:
+    def forward(self, zs: torch.Tensor, obs=None) -> dist.Distribution:
         P, B, _ = zs.shape
         hs = self.linear(zs.view(P*B, -1))
         hs = hs.view(P*B, self._hidden_dim, 1, 1)
         hs = self.convs(hs).view(P, B, self._channels, self._img_side,
                                  self._img_side)
+        if self.training and obs is not None:
+            scale = ((obs - hs) ** 2).mean().sqrt()
+            scale = 0.99 * scale + 0.01 * self.scale
+            self.scale = scale.detach()
+        else:
+            scale = self.scale
         if self._discretize:
-            return DiscretizedGaussian(hs, 1e-2).to_event(3)
-        return dist.Normal(hs, 1e-2).to_event(3)
+            return DiscretizedGaussian(hs, scale).to_event(3)
+        return dist.Normal(hs, scale).to_event(3)
 
 class FixedVarianceDecoder(MarkovKernel):
-    def __init__(self, channels=3, img_side=64, scale=0.01, z_dim=64):
+    def __init__(self, channels=3, discretize=True, img_side=64, scale=0.01,
+                 z_dim=64):
         super().__init__()
         self.batch_shape = ()
         self._channels = channels
+        self._discretize = discretize
         self._img_side = img_side
 
         self.likelihood_scale = scale
@@ -384,11 +397,13 @@ class FixedVarianceDecoder(MarkovKernel):
     def event_dim(self):
         return 3
 
-    def forward(self, zs: torch.Tensor) -> dist.Distribution:
+    def forward(self, zs: torch.Tensor, obs=None) -> dist.Distribution:
         P, B, _ = zs.shape
         loc = self.mean_network(zs.view(P*B, -1)).view(P, B, self._channels,
                                                        self._img_side,
                                                        self._img_side)
+        if self._discretize:
+            return DiscretizedGaussian(loc, self.likelihood_scale).to_event(3)
         return dist.Normal(loc, self.likelihood_scale).to_event(3)
 
 class GraphicalModel(ImportanceModel, pnn.PyroModule):
@@ -433,9 +448,9 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
         results = ()
 
         for site, kernel in self.sweep():
-            density = kernel(*self.parent_vals(site))
             obs = self.nodes[site]['value'] if self.nodes[site]['is_observed']\
                   else None
+            density = kernel(*self.parent_vals(site), **{"obs": obs})
             self.nodes[site]['support'] = density.support
             self.update(site, pyro.sample(site, density, obs=obs).detach())
 

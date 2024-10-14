@@ -1,8 +1,8 @@
 {
-    "name": "EMnist_Ppc",
+    "name": "MiniBouncingMnist_Dcpc",
 
     "arch": {
-        "type": "MnistPpc",
+        "type": "BouncingMnistDcpc",
         "args": {}
     },
     "checkpoint": {
@@ -16,22 +16,21 @@
         }
     },
     "data_module": {
-        "type": "EMnistDataModule",
-        "args":{
-            "data_dir": "data/",
-            "batch_size": 6144
+        "type": "MiniBouncingMnistDataModule",
+        "args": {
+            "data_dir": "data/apg_training",
+            "batch_size": 5
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningDcpc",
         "args": {
-            "cooldown": 10,
+            "cooldown": 50,
             "factor": 0.9,
-            "lrp": 0.01,
-            "lrq": 0.001,
-            "num_particles": 2,
-            "num_sweeps": 1,
-            "patience": 50
+            "lr": 1e-4,
+            "num_particles": 10,
+            "num_sweeps": 5,
+            "patience": 100
         }
     },
     "logger": {
@@ -42,8 +41,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": 1,
-          "max_epochs": 2000,
+          "devices": [7],
+          "max_epochs": 1000,
           "min_epochs": 1
         }
     }

@@ -1,36 +1,42 @@
 {
-    "name": "BouncingMnist_Ppc",
+    "name": "Heteroskedastic_CelebA_Dcpc",
 
     "arch": {
-        "type": "BouncingMnistPpc",
-        "args": {}
+        "type": "GeneratorDcpc",
+        "args": {
+            "heteroskedastic": true,
+            "z_dim": 40,
+            "discretize": true
+        }
     },
     "checkpoint": {
         "type": "ModelCheckpoint",
         "args": {
             "auto_insert_metric_name": false,
-            "every_n_epochs": 10,
+            "every_n_epochs": 5,
             "filename": "checkpoint_{epoch}",
             "mode": "min",
             "monitor": "valid/loss"
         }
     },
     "data_module": {
-        "type": "BouncingMnistDataModule",
-        "args": {
+        "type": "CelebADataModule",
+        "args":{
             "data_dir": "data/",
-            "batch_size": 448
+            "batch_size": 64,
+            "num_workers": 8,
+            "side": 64
         }
     },
     "lmodule": {
-        "type": "LightningPpc",
+        "type": "LightningDcpc",
         "args": {
-            "cooldown": 50,
+            "cooldown": 10,
             "factor": 0.9,
-            "lr": 0.001,
-            "num_particles": 10,
-            "num_sweeps": 1,
-            "patience": 100
+            "lr": 1e-3,
+            "num_particles": 16,
+            "num_sweeps": 30,
+            "patience": 50
         }
     },
     "logger": {
@@ -41,8 +47,8 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": -1,
-          "max_epochs": 1000,
+          "devices": [7],
+          "max_epochs": 150,
           "min_epochs": 1
         }
     }

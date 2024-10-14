@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from base import BaseModel, MarkovKernelApplication
 from .generative import *
-from .inference import PpcGraphicalModel, asvi, mlp_amortizer
+from .inference import DcpcGraphicalModel, asvi, mlp_amortizer
 
 class BouncingMnistAsvi(ImportanceModel):
     def __init__(self, digit_side=28, hidden_dim=400, num_digits=3, T=10,
@@ -74,7 +74,7 @@ class BouncingMnistAsvi(ImportanceModel):
                                                 batch_shape=(B,))
                 z_where = pyro.sample('z_where__%d' % t, pz_where)
 
-class MnistPpc(PpcGraphicalModel):
+class MnistDcpc(DcpcGraphicalModel):
     def __init__(self, x_dims, z_dims=[20, 128, 256]):
         super().__init__()
         self.prior = GaussianPrior(z_dims[0])
@@ -94,7 +94,7 @@ class MnistPpc(PpcGraphicalModel):
     def conditioner(self, data):
         return {"X": data}
 
-class BouncingMnistPpc(PpcGraphicalModel):
+class BouncingMnistDcpc(DcpcGraphicalModel):
     def __init__(self, dims, digit_side=28, hidden_dim=400, num_digits=3,
                  z_what_dim=10, z_where_dim=2):
         super().__init__()
@@ -126,7 +126,7 @@ class BouncingMnistPpc(PpcGraphicalModel):
         T = xs.shape[1]
         return {"X__%d" % t: xs[:, t] for t in range(T)}
 
-class DiffusionPpc(PpcGraphicalModel):
+class DiffusionDcpc(DcpcGraphicalModel):
     def __init__(self, dims, dim_mults=(1, 2, 4, 8), unet="Unet",
                  flash_attn=True, hidden_dim=64, T=100):
         super().__init__()
@@ -149,7 +149,7 @@ class DiffusionPpc(PpcGraphicalModel):
     def conditioner(self, data):
         return {"X__0": data}
 
-class GeneratorPpc(PpcGraphicalModel):
+class GeneratorDcpc(DcpcGraphicalModel):
     def __init__(self, dims, z_dim=40, heteroskedastic=True, hidden_dim=256,
                  discretize=True):
         super().__init__()
@@ -162,7 +162,8 @@ class GeneratorPpc(PpcGraphicalModel):
                                                    discretize=discretize,
                                                    hidden_dim=hidden_dim)
         else:
-            self.likelihood = FixedVarianceDecoder(dims[0], dims[-1],
+            self.likelihood = FixedVarianceDecoder(dims[0], img_side=dims[-1],
+                                                   discretize=discretize,
                                                    z_dim=z_dim)
 
         self.add_node("z", [], MarkovKernelApplication("prior", (), {}))
@@ -188,50 +189,50 @@ class GeneratorPpc(PpcGraphicalModel):
         cs = assignments.sample((B,))
         zs = dist.MultivariateNormal(locs[cs], scale_tril=tril[cs])((P,))
         zs = zs.to(device=self.prior.loc.device)
-        return super().predict(*args, B=B, P=P, z=zs.view(P, B, -1))
+        predictive = self.kernel("X")(zs.view(P, B, -1))
+        return predictive.base_dist.loc
 
 class ConvolutionalVae(ImportanceModel):
-    def __init__(self, dims, discretize=True, z_dim=40, hidden_dim=256):
+    def __init__(self, dims, discretize=True, heteroskedastic=True, z_dim=40,
+                 hidden_dim=256):
         super().__init__()
         self._channels = dims[0]
         self._prediction_subsample = 10000
 
-        self.decoder = ConvolutionalDecoder(dims[0], z_dim, dims[-1],
-                                            discretize=discretize,
-                                            hidden_dim=hidden_dim)
-        self.encoder = ConvolutionalEncoder(self._channels, z_dim, dims[-1],
-                                            hidden_dim=hidden_dim)
+        if heteroskedastic:
+            self.decoder = ConvolutionalDecoder(dims[0], z_dim, dims[-1],
+                                                discretize=discretize,
+                                                hidden_dim=hidden_dim)
+        else:
+            self.decoder = FixedVarianceDecoder(dims[0], img_side=dims[-1],
+                                                discretize=discretize,
+                                                z_dim=z_dim)
+        self.encoder = ConvolutionalEncoder(self._channels, z_dim,
+                                            hidden_dim=hidden_dim,
+                                            img_side=dims[-1])
         self.prior = GaussianPrior(z_dim, False)
 
     def model(self, xs=None, **kwargs):
         B, _, _, _ = xs.shape
         with pyro.plate_stack("data", (B,)):
             z = pyro.sample("z", self.prior())
-            return pyro.sample("X", self.decoder(z), obs=xs)
+            return pyro.sample("X", self.decoder(z, obs=xs), obs=xs)
 
     def guide(self, xs: torch.Tensor, **kwargs):
         B, _, _, _ = xs.shape
         with pyro.plate_stack("data", (B,)):
             return pyro.sample("z", self.encoder(xs).to_event(1))
 
-    def predict(self, *args, B=1, P=1, z=None):
-        from sklearn.mixture import GaussianMixture
-        z = z.flatten(0, 1)
-        idx = torch.randint(0, z.shape[0], (self._prediction_subsample,))
-        if self.gmm is None:
-            self.gmm = GaussianMixture(n_components=100).fit(z[idx])
-        assignments = dist.Categorical(probs=torch.tensor(self.gmm.weights_))
-        locs = torch.tensor(self.gmm.means_).to(dtype=torch.float)
-        tril = torch.tril(torch.tensor(self.gmm.covariances_))
-        tril = tril.to(dtype=torch.float)
+    def predict(self, *args, B=1, P=1, z=None, **kwargs):
+        zs = z.to(device=self.prior.loc.device)
+        model = pyro.condition(self.model, data={"X": None, "z": zs.view(P, B, -1)})
+        trace = pyro.poutine.trace(model).get_trace(*args, B=B, P=P)
+        likelihood = trace.nodes['X']["fn"]
+        while hasattr(likelihood, "base_dist"):
+            likelihood = likelihood.base_dist
+        return likelihood.mean
 
-        cs = assignments.sample((B,))
-        zs = dist.MultivariateNormal(locs[cs], scale_tril=tril[cs])((P,))
-        zs = zs.to(device=self.prior.loc.device)
-        with pyro.condition(self.forward, data={"z": zs.view(P, B, -1)}) as f:
-            return f(*args, B=B, mode="prior", P=P)
-
-class SequentialMemoryPpc(PpcGraphicalModel):
+class SequentialMemoryDcpc(DcpcGraphicalModel):
     def __init__(self, dims, z_dim=480, u_dim=0, nonlinearity=nn.Tanh):
         super().__init__()
         self._num_times, C, W, H = dims
