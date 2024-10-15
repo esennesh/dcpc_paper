@@ -86,6 +86,21 @@ For those wondering what a "discretized Normal" distribution is, we provide an
 implementation as a Pyro distribution, in `utils.util.DiscretizedGaussian`. The
 definition comes from the literature on diffusion models.
 
+## Citation
+If you found our code or paper useful in your work, then please cite our [preprint](https://arxiv.org/abs/2408.05834) or proceedings paper.
+
+```bibtex
+@misc{sennesh2024divideandconquerpredictivecodingstructured,
+      title={Divide-and-Conquer Predictive Coding: a structured Bayesian inference algorithm}, 
+      author={Eli Sennesh and Hao Wu and Tommaso Salvatori},
+      year={2024},
+      eprint={2408.05834},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/2408.05834}, 
+}
+```
+
 ## Contributing
 
 Feel free to contribute back to this code or fork it, as long as you remain in compliance with the following license:
