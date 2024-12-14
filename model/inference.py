@@ -98,7 +98,7 @@ class DcpcGraphicalModel(GraphicalModel):
 
     def _compute_site_errors(self, site):
         value = self.nodes[site]['value']
-        pvals = self.parent_vals(site)
+        pvals, pstates = self.parent_vals(site), self.parent_states(site)
         def logprobsum(value, *args, **kwargs):
             if self.nodes[site]['support']:
                 value = biject_to(self.nodes[site]['support'])(value)
@@ -111,7 +111,7 @@ class DcpcGraphicalModel(GraphicalModel):
             raise NotImplementedError("Discrete prediction errors not implemented!")
         if self.nodes[site]['support']:
             value = biject_to(self.nodes[site]['support']).inv(value)
-        return error(value, *pvals)
+        return error(value, *pvals, *pstates)
 
     def _site_errors(self, site):
         if self.nodes[site].get('errors', None) is None:
@@ -162,21 +162,22 @@ class DcpcGraphicalModel(GraphicalModel):
         return results[0] if len(results) == 1 else results
 
     def log_complete_conditional(self, site, value):
-        args = tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
+        args = self.parent_vals(site) + self.parent_states(site)
         log_sitecc = self.log_prob(site, value, *args)
         for child in self.child_sites(site):
             args = tuple(value if s == site else self.nodes[s]['value']
                          for s in self.parent_sites(child))
+            args = args + self.parent_states(child)
             log_sitecc = log_sitecc + self.log_prob(child,
                                                     self.nodes[child]['value'],
                                                     *args)
         return log_sitecc
 
-    def update(self, site, value):
+    def update(self, site, value, state=None):
         self.nodes[site]['errors'] = None
         for child in self.child_sites(site):
             self.nodes[child]['errors'] = None
-        return super().update(site, value)
+        return super().update(site, value, state=state)
 
 def dist_params(dist: Distribution):
     return {k: v for k, v in dist.__dict__.items() if k[0] != '_'}
