@@ -413,7 +413,7 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
 
     def add_node(self, site, parents, kernel):
         self._graph.add_node(site, is_observed=False, kernel=kernel, kwargs={},
-                             support=None, value=None)
+                             state=None, support=None, value=None)
         for parent in parents:
             self._graph.add_edge(parent, site)
 
@@ -450,9 +450,11 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
         for site, kernel in self.sweep():
             obs = self.nodes[site]['value'] if self.nodes[site]['is_observed']\
                   else None
-            density = kernel(*self.parent_vals(site), **{"obs": obs})
+            density, state = kernel(*self.parent_vals(site),
+                                    *self.parent_states(site), **{"obs": obs})
             self.nodes[site]['support'] = density.support
-            self.update(site, pyro.sample(site, density, obs=obs).detach())
+            self.update(site, pyro.sample(site, density, obs=obs).detach(),
+                        state=state)
 
             if len(list(self.child_sites(site))) == 0:
                 results = results + (self.nodes[site]['value'],)
@@ -464,7 +466,7 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
                                  **apply.kwargs)
 
     def log_prob(self, site, value, *args, **kwargs):
-        return self.kernel(site)(*args, **kwargs).log_prob(value)
+        return self.kernel(site)(*args, **kwargs)[0].log_prob(value)
 
     @property
     def nodes(self):
@@ -472,6 +474,10 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
 
     def parent_sites(self, site):
         return self._graph.predecessors(site)
+
+    def parent_states(self, site):
+        return tuple(self.nodes[p]['state'] for p in self.parent_sites(site)
+                     if self.nodes[p]['state'] is not None)
 
     def parent_vals(self, site):
         return tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
@@ -503,6 +509,10 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
             if key != "kernel":
                 self.nodes[site][key] = None
 
-    def update(self, site, value):
+    def update(self, site, value, state=None):
         self.nodes[site]['value'] = value
+        if state is not None:
+            if state.shape[:2] != value.shape[:2]:
+                state = state.expand(value.shape[0], *state.shape)
+            self.nodes[site]['state'] = state
         return self.nodes[site]['value']
