@@ -1,7 +1,7 @@
 import functools
 import math
 import networkx as nx
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence, Tuple
 
 import torch
 import torch.distributions.constraints as constraints
@@ -56,6 +56,11 @@ class ParticleDict(nn.ParameterDict):
         self._num_particles = num_particles
         self._particle_dim = 0
 
+    def __iter__(self):
+        for k in self.keys():
+            if not k.endswith("_state"):
+                yield k
+
     @property
     def num_data(self):
         return self._num_data
@@ -64,25 +69,49 @@ class ParticleDict(nn.ParameterDict):
     def num_particles(self):
         return self._num_particles
 
-    def get_particles(self, key: str, idx: torch.LongTensor) -> torch.Tensor:
-        val = self[key]
+    def get_particles(self, key: str, idx: torch.LongTensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        val, state = self[key], self.get(key + "_state")
+
         assert val.shape[self._batch_dim] == self.num_data
         assert val.shape[self._particle_dim] == self.num_particles
         val = torch.index_select(val, self._batch_dim, idx.to(val.device))
-        return val.to(idx.device)
+        val = val.to(idx.device)
 
-    def set_particles(self, key: str, idx: torch.LongTensor, val: torch.Tensor):
+        if state is not None:
+            assert state.shape[self._batch_dim] == self.num_data
+            assert state.shape[self._particle_dim] == self.num_particles
+            state = torch.index_select(state, self._batch_dim,
+                                       idx.to(state.device)).to(idx.device)
+
+        return val, state
+
+    def set_particles(self, key: str, idx: torch.LongTensor, val: torch.Tensor,
+                      state: Optional[torch.Tensor]):
         assert val.shape[self._particle_dim] == self.num_particles
         if key not in self:
             shape = list(val.shape)
             shape[self._batch_dim] = self.num_data
             self[key] = torch.zeros(*shape)
+
+            if state is not None:
+                shape = list(state.shape)
+                shape[self._batch_dim] = self.num_data
+                self[key + "_state"] = torch.zeros(*shape)
+
         with torch.no_grad():
             indices = idx.view((1,) * self._batch_dim + (len(idx),) +\
                                (1,) * len(val.shape[self._batch_dim+1:]))
             indices = indices.to(self[key].device)
             self[key].scatter_(self._batch_dim, indices.expand(val.shape),
                                val.to(self[key].device))
+            if state is not None:
+                indices = idx.view((1,) * self._batch_dim + (len(idx),) +\
+                                   (1,) * len(state.shape[self._batch_dim+1:]))
+                indices = indices.to(self[key].device)
+                self[key + "_state"].scatter_(
+                    self._batch_dim, indices.expand(state.shape),
+                    state.to(self[key + "_state"].device)
+                )
 
 class DcpcGraphicalModel(GraphicalModel):
     def __init__(self, beta=0.99):
