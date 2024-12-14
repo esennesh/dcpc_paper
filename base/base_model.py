@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 import pyro
 import torch
+from typing import Any, Tuple
 import utils
 
 class BaseModel(pyro.nn.PyroModule):
@@ -63,7 +64,7 @@ class MarkovKernel(pyro.nn.PyroModule):
 
     @abstractmethod
     def forward(self, *args, obs=None,
-                **kwargs) -> pyro.distributions.Distribution:
+                **kwargs) -> Tuple[pyro.distributions.Distribution, Any]:
         """
         Forward pass logic
 
