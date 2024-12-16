@@ -235,7 +235,8 @@ class MlpBernoulliLikelihood(MarkovKernel):
     def forward(self, hs: torch.Tensor, obs=None) -> dist.Distribution:
         P, B, _ = hs.shape
         logits = self.decoder(hs).view(P, B, 1, *self._out_shape)
-        return dist.ContinuousBernoulli(logits=logits).to_event(self.event_dim)
+        density = dist.ContinuousBernoulli(logits=logits)
+        return density.to_event(self.event_dim), None
 
 class DiffusionPrior(MarkovKernel):
     def __init__(self, channels=3, img_side=128):
