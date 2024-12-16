@@ -139,7 +139,7 @@ class GaussianPrior(MarkovKernel):
         loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
-        return dist.MultivariateNormal(loc, scale_tril=scale)
+        return dist.MultivariateNormal(loc, scale_tril=scale), None
 
 class ConditionalGaussian(MarkovKernel):
     def __init__(self, in_dim, out_dim, nonlinearity=nn.ReLU):
