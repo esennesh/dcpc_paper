@@ -158,7 +158,7 @@ class ConditionalGaussian(MarkovKernel):
     def forward(self, hs: torch.Tensor, obs=None) -> dist.Distribution:
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
-        return dist.MultivariateNormal(self.decoder(hs), scale_tril=scale)
+        return dist.MultivariateNormal(self.decoder(hs), scale_tril=scale), None
 
 class GaussianSsm(MarkovKernel):
     def __init__(self, z_dim, u_dim=0, nonlinearity=nn.Identity):
