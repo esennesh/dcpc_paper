@@ -19,8 +19,12 @@ from utils.util import DiscretizedGaussian
 from utils.thirdparty import NLVM, ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
-    def __init__(self, hidden_dim=10, num_digits=3, z_where_dim=2):
+    def __init__(self, num_digits=3, z_where_dim=2):
         super().__init__()
+        hidden_dim = z_where_dim * num_digits * 2
+        self.h_init = nn.Parameter(torch.zeros(hidden_dim))
+        self.dynamics = nn.GRUCell(z_where_dim * num_digits, hidden_dim)
+
         self.register_buffer('loc', torch.zeros(z_where_dim))
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
         self.batch_shape = ()
@@ -30,13 +34,23 @@ class DigitPositions(MarkovKernel):
     def event_dim(self):
         return 2
 
-    def forward(self, z_where, obs=None) -> dist.Distribution:
+    def forward(self, z_where, h, obs=None) -> dist.Distribution:
         param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         scale = self.scale.expand(param_shape)
         if z_where is None:
             z_where = self.loc.expand(param_shape)
             scale = scale * 5
-        return dist.Normal(z_where, scale).to_event(2)
+
+            h_next = self.h_init.expand((*self.batch_shape,
+                                         *self.h_init.shape))
+        else:
+            h_next = self.dynamics(z_where.flatten(0, 1).flatten(-2, -1),
+                                   h.flatten(0, 1)).view(*h.shape)
+            h_where = h_next.view(*z_where.shape, 2)
+            z_where = h_where[..., 0]
+            scale = h_where[..., 1].exp()
+
+        return dist.Normal(z_where, scale).to_event(2), h_next
 
 class DigitFeatures(MarkovKernel):
     def __init__(self, num_digits=3, z_what_dim=10):
