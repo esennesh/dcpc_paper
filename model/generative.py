@@ -66,7 +66,8 @@ class DigitFeatures(MarkovKernel):
 
     def forward(self, obs=None) -> dist.Distribution:
         dist_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
-        return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
+        density = dist.Normal(self.loc, self.scale).expand(dist_shape)
+        return density.to_event(2), None
 
 class DigitsDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10,
