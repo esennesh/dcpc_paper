@@ -112,7 +112,7 @@ class BouncingMnistDcpc(DcpcGraphicalModel):
         for t in range(dims[0]):
             if t == 0:
                 where_kernel = MarkovKernelApplication("digit_positions",
-                                                       (None,), {})
+                                                       (None, None), {})
                 self.add_node("z_where__0", [], where_kernel)
             else:
                 self.add_node(
