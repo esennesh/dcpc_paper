@@ -94,13 +94,13 @@ class DigitsDecoder(MarkovKernel):
         grid = F.affine_grid(
             torch.cat((affine_p1, affine_p2), -1).view(P*B*K, 2, 3),
             torch.Size((P*B*K, 1, self._x_side, self._x_side)),
-            align_corners=False
+            align_corners=True
         )
 
         digits = digits.view(P*B*K, self._digit_side, self._digit_side)
         digits = digits.unsqueeze(1)
         frames = F.grid_sample(digits, grid, mode='nearest',
-                               align_corners=False).squeeze(1)
+                               align_corners=True).squeeze(1)
         return frames.view(P, B, K, self._x_side, self._x_side)
 
     @property
