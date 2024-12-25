@@ -77,8 +77,10 @@ class DigitsDecoder(MarkovKernel):
         self._digit_side = digit_side
         self._x_side = x_side
         self.decoder = nn.Sequential(
-            nn.Linear(z_what_dim, hidden_dim // 2), nn.ReLU(),
-            nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
+            nn.Linear(z_what_dim, hidden_dim // 2),
+            nn.LayerNorm((hidden_dim // 2,)), nn.SiLU(),
+            nn.Linear(hidden_dim // 2, hidden_dim),
+            nn.LayerNorm((hidden_dim,)), nn.SiLU(),
             nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
         )
         self.register_buffer('scale', torch.eye(2) * x_side / digit_side)
