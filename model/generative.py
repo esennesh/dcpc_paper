@@ -19,8 +19,12 @@ from utils.util import DiscretizedGaussian
 from utils.thirdparty import NLVM, ScoreNetwork0, soft_clamp
 
 class DigitPositions(MarkovKernel):
-    def __init__(self, hidden_dim=10, num_digits=3, z_where_dim=2):
+    def __init__(self, num_digits=3, z_where_dim=2):
         super().__init__()
+        hidden_dim = z_where_dim * num_digits * 2
+        self.h_init = nn.Parameter(torch.zeros(hidden_dim))
+        self.dynamics = nn.GRUCell(z_where_dim * num_digits, hidden_dim)
+
         self.register_buffer('loc', torch.zeros(z_where_dim))
         self.register_buffer('scale', torch.ones(z_where_dim) * 0.2)
         self.batch_shape = ()
@@ -30,13 +34,23 @@ class DigitPositions(MarkovKernel):
     def event_dim(self):
         return 2
 
-    def forward(self, z_where, obs=None) -> dist.Distribution:
+    def forward(self, z_where, h, obs=None) -> dist.Distribution:
         param_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
         scale = self.scale.expand(param_shape)
         if z_where is None:
             z_where = self.loc.expand(param_shape)
             scale = scale * 5
-        return dist.Normal(z_where, scale).to_event(2)
+
+            h_next = self.h_init.expand((*self.batch_shape,
+                                         *self.h_init.shape))
+        else:
+            h_next = self.dynamics(z_where.flatten(0, 1).flatten(-2, -1),
+                                   h.flatten(0, 1)).view(*h.shape)
+            h_where = h_next.view(*z_where.shape, 2)
+            z_where = h_where[..., 0]
+            scale = h_where[..., 1].exp()
+
+        return dist.Normal(z_where, scale).to_event(2), h_next
 
 class DigitFeatures(MarkovKernel):
     def __init__(self, num_digits=3, z_what_dim=10):
@@ -52,7 +66,8 @@ class DigitFeatures(MarkovKernel):
 
     def forward(self, obs=None) -> dist.Distribution:
         dist_shape = (*self.batch_shape, self._num_digits, *self.loc.shape)
-        return dist.Normal(self.loc, self.scale).expand(dist_shape).to_event(2)
+        density = dist.Normal(self.loc, self.scale).expand(dist_shape)
+        return density.to_event(2), None
 
 class DigitsDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, x_side=96, z_what_dim=10,
@@ -92,11 +107,11 @@ class DigitsDecoder(MarkovKernel):
     def event_dim(self):
         return 2
 
-    def forward(self, what, where, obs=None) -> dist.Distribution:
+    def forward(self, what, where, h, obs=None) -> dist.Distribution:
         P, B, K, _ = where.shape
         digits = self.decoder(what)
         frames = soft_clamp(self.blit(digits, where).sum(dim=-3), 0., 1.)
-        return dist.ContinuousBernoulli(frames).to_event(2)
+        return dist.ContinuousBernoulli(frames).to_event(2), None
 
 class DigitDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
@@ -139,7 +154,7 @@ class GaussianPrior(MarkovKernel):
         loc = self.loc.expand(*self.batch_shape, *self.loc.shape)
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
-        return dist.MultivariateNormal(loc, scale_tril=scale)
+        return dist.MultivariateNormal(loc, scale_tril=scale), None
 
 class ConditionalGaussian(MarkovKernel):
     def __init__(self, in_dim, out_dim, nonlinearity=nn.ReLU):
@@ -158,7 +173,7 @@ class ConditionalGaussian(MarkovKernel):
     def forward(self, hs: torch.Tensor, obs=None) -> dist.Distribution:
         scale = torch.tril(self.covariance).expand(*self.batch_shape,
                                                    *self.covariance.shape)
-        return dist.MultivariateNormal(self.decoder(hs), scale_tril=scale)
+        return dist.MultivariateNormal(self.decoder(hs), scale_tril=scale), None
 
 class GaussianSsm(MarkovKernel):
     def __init__(self, z_dim, u_dim=0, nonlinearity=nn.Identity):
@@ -235,7 +250,8 @@ class MlpBernoulliLikelihood(MarkovKernel):
     def forward(self, hs: torch.Tensor, obs=None) -> dist.Distribution:
         P, B, _ = hs.shape
         logits = self.decoder(hs).view(P, B, 1, *self._out_shape)
-        return dist.ContinuousBernoulli(logits=logits).to_event(self.event_dim)
+        density = dist.ContinuousBernoulli(logits=logits)
+        return density.to_event(self.event_dim), None
 
 class DiffusionPrior(MarkovKernel):
     def __init__(self, channels=3, img_side=128):
@@ -413,7 +429,7 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
 
     def add_node(self, site, parents, kernel):
         self._graph.add_node(site, is_observed=False, kernel=kernel, kwargs={},
-                             support=None, value=None)
+                             state=None, support=None, value=None)
         for parent in parents:
             self._graph.add_edge(parent, site)
 
@@ -450,9 +466,11 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
         for site, kernel in self.sweep():
             obs = self.nodes[site]['value'] if self.nodes[site]['is_observed']\
                   else None
-            density = kernel(*self.parent_vals(site), **{"obs": obs})
+            density, state = kernel(*self.parent_vals(site),
+                                    *self.parent_states(site), **{"obs": obs})
             self.nodes[site]['support'] = density.support
-            self.update(site, pyro.sample(site, density, obs=obs).detach())
+            self.update(site, pyro.sample(site, density, obs=obs).detach(),
+                        state=state)
 
             if len(list(self.child_sites(site))) == 0:
                 results = results + (self.nodes[site]['value'],)
@@ -464,7 +482,7 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
                                  **apply.kwargs)
 
     def log_prob(self, site, value, *args, **kwargs):
-        return self.kernel(site)(*args, **kwargs).log_prob(value)
+        return self.kernel(site)(*args, **kwargs)[0].log_prob(value)
 
     @property
     def nodes(self):
@@ -472,6 +490,10 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
 
     def parent_sites(self, site):
         return self._graph.predecessors(site)
+
+    def parent_states(self, site):
+        return tuple(self.nodes[p]['state'] for p in self.parent_sites(site)
+                     if self.nodes[p]['state'] is not None)
 
     def parent_vals(self, site):
         return tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
@@ -503,6 +525,10 @@ class GraphicalModel(ImportanceModel, pnn.PyroModule):
             if key != "kernel":
                 self.nodes[site][key] = None
 
-    def update(self, site, value):
+    def update(self, site, value, state=None):
         self.nodes[site]['value'] = value
+        if state is not None:
+            if state.shape[:2] != value.shape[:2]:
+                state = state.expand(value.shape[0], *state.shape)
+            self.nodes[site]['state'] = state
         return self.nodes[site]['value']

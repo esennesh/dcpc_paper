@@ -1,7 +1,7 @@
 import functools
 import math
 import networkx as nx
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence, Tuple
 
 import torch
 import torch.distributions.constraints as constraints
@@ -56,6 +56,11 @@ class ParticleDict(nn.ParameterDict):
         self._num_particles = num_particles
         self._particle_dim = 0
 
+    def __iter__(self):
+        for k in self.keys():
+            if not k.endswith("_state"):
+                yield k
+
     @property
     def num_data(self):
         return self._num_data
@@ -64,25 +69,49 @@ class ParticleDict(nn.ParameterDict):
     def num_particles(self):
         return self._num_particles
 
-    def get_particles(self, key: str, idx: torch.LongTensor) -> torch.Tensor:
-        val = self[key]
+    def get_particles(self, key: str, idx: torch.LongTensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        val, state = self[key], self.get(key + "_state")
+
         assert val.shape[self._batch_dim] == self.num_data
         assert val.shape[self._particle_dim] == self.num_particles
         val = torch.index_select(val, self._batch_dim, idx.to(val.device))
-        return val.to(idx.device)
+        val = val.to(idx.device)
 
-    def set_particles(self, key: str, idx: torch.LongTensor, val: torch.Tensor):
+        if state is not None:
+            assert state.shape[self._batch_dim] == self.num_data
+            assert state.shape[self._particle_dim] == self.num_particles
+            state = torch.index_select(state, self._batch_dim,
+                                       idx.to(state.device)).to(idx.device)
+
+        return val, state
+
+    def set_particles(self, key: str, idx: torch.LongTensor, val: torch.Tensor,
+                      state: Optional[torch.Tensor]):
         assert val.shape[self._particle_dim] == self.num_particles
         if key not in self:
             shape = list(val.shape)
             shape[self._batch_dim] = self.num_data
             self[key] = torch.zeros(*shape)
+
+            if state is not None:
+                shape = list(state.shape)
+                shape[self._batch_dim] = self.num_data
+                self[key + "_state"] = torch.zeros(*shape)
+
         with torch.no_grad():
             indices = idx.view((1,) * self._batch_dim + (len(idx),) +\
                                (1,) * len(val.shape[self._batch_dim+1:]))
             indices = indices.to(self[key].device)
             self[key].scatter_(self._batch_dim, indices.expand(val.shape),
                                val.to(self[key].device))
+            if state is not None:
+                indices = idx.view((1,) * self._batch_dim + (len(idx),) +\
+                                   (1,) * len(state.shape[self._batch_dim+1:]))
+                indices = indices.to(self[key].device)
+                self[key + "_state"].scatter_(
+                    self._batch_dim, indices.expand(state.shape),
+                    state.to(self[key + "_state"].device)
+                )
 
 class DcpcGraphicalModel(GraphicalModel):
     def __init__(self, beta=0.99):
@@ -98,7 +127,7 @@ class DcpcGraphicalModel(GraphicalModel):
 
     def _compute_site_errors(self, site):
         value = self.nodes[site]['value']
-        pvals = self.parent_vals(site)
+        pvals, pstates = self.parent_vals(site), self.parent_states(site)
         def logprobsum(value, *args, **kwargs):
             if self.nodes[site]['support']:
                 value = biject_to(self.nodes[site]['support'])(value)
@@ -111,7 +140,7 @@ class DcpcGraphicalModel(GraphicalModel):
             raise NotImplementedError("Discrete prediction errors not implemented!")
         if self.nodes[site]['support']:
             value = biject_to(self.nodes[site]['support']).inv(value)
-        return error(value, *pvals)
+        return error(value, *pvals, *pstates)
 
     def _site_errors(self, site):
         if self.nodes[site].get('errors', None) is None:
@@ -162,21 +191,22 @@ class DcpcGraphicalModel(GraphicalModel):
         return results[0] if len(results) == 1 else results
 
     def log_complete_conditional(self, site, value):
-        args = tuple(self.nodes[p]['value'] for p in self.parent_sites(site))
+        args = self.parent_vals(site) + self.parent_states(site)
         log_sitecc = self.log_prob(site, value, *args)
         for child in self.child_sites(site):
             args = tuple(value if s == site else self.nodes[s]['value']
                          for s in self.parent_sites(child))
+            args = args + self.parent_states(child)
             log_sitecc = log_sitecc + self.log_prob(child,
                                                     self.nodes[child]['value'],
                                                     *args)
         return log_sitecc
 
-    def update(self, site, value):
+    def update(self, site, value, state=None):
         self.nodes[site]['errors'] = None
         for child in self.child_sites(site):
             self.nodes[child]['errors'] = None
-        return super().update(site, value)
+        return super().update(site, value, state=state)
 
 def dist_params(dist: Distribution):
     return {k: v for k, v in dist.__dict__.items() if k[0] != '_'}
