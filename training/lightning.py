@@ -254,7 +254,7 @@ class LightningDcpc(L.LightningModule):
             "ess": metric.ess(trace, log_weight),
             "log_joint": metric.log_joint(trace, log_weight),
             "log_marginal": metric.log_marginal(trace, log_weight),
-            "loss": -log_weight.mean()
+            "loss": -utils.logmeanexp(log_weight, 0, False).mean()
         }
         if len(self.data.dims) == 3 and self.data.dims[0] == 3:
             self.metrics['fid'] = self.metrics['fid'].to(self.device)
@@ -283,8 +283,7 @@ class LightningDcpc(L.LightningModule):
         data, _, indices = batch
         self._load_particles(indices, train=True)
         trace, log_weight = self.dcpc_step(data)
-        loss = (F.softmax(log_weight, dim=0).detach() * log_weight).sum(dim=0)
-        loss = -loss.mean()
+        loss = -utils.logmeanexp(log_weight, 0, False).mean()
         self._save_particles(indices, train=True)
 
         self.log("train/ess", metric.ess(trace, log_weight.detach()))
@@ -299,8 +298,7 @@ class LightningDcpc(L.LightningModule):
         data, _, indices = batch
         self._load_particles(indices, train=False)
         trace, log_weight = self.dcpc_step(data)
-        loss = (F.softmax(log_weight, dim=0).detach() * log_weight).sum(dim=0)
-        loss = -loss.mean()
+        loss = -utils.logmeanexp(log_weight, 0, False).mean()
         self._save_particles(indices, train=False)
 
         self.log("valid/ess", metric.ess(trace, log_weight.detach()),
