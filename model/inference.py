@@ -114,10 +114,6 @@ class ParticleDict(nn.ParameterDict):
                 )
 
 class DcpcGraphicalModel(GraphicalModel):
-    def __init__(self, beta=0.99):
-        super().__init__()
-        self._beta = beta
-
     def _complete_conditional_error(self, site):
         error = self._site_errors(site)[0]
         for child in self.child_sites(site):
@@ -146,10 +142,6 @@ class DcpcGraphicalModel(GraphicalModel):
         if self.nodes[site].get('errors', None) is None:
             self.nodes[site]['errors'] = self._compute_site_errors(site)
         return self.nodes[site]['errors']
-
-    def add_node(self, site, parents, kernel):
-        super().add_node(site, parents, kernel)
-        self.nodes[site]['momentum'] = 0.
 
     @torch.no_grad()
     def get_posterior(self, name: str, event_dim: int, beta=1., lr=1e-3):
