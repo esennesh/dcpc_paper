@@ -150,7 +150,7 @@ class LightningDcpc(L.LightningModule):
         self._lrq = lrq
         self.graph = graph
         self.metrics = {
-            'ess': torchmetrics.aggregation.MeanMetric(),
+            'ess': torchmetrics.aggregation.RunningMean(window=8),
         }
         self.metrics['ess'].update(num_particles)
         self.num_particles = num_particles
