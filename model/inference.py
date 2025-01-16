@@ -150,8 +150,7 @@ class DcpcGraphicalModel(GraphicalModel):
             bijector = biject_to(self.nodes[name]['support'])
             z = bijector.inv(z)
         error = self._complete_conditional_error(name)
-        fisher = error.var(dim=0, keepdim=True) + 1 / error.shape[0]
-        prec = 1 / fisher
+        prec = 1 / (error.var(dim=0, keepdim=True) + 1 / error.shape[0])
 
         proposal = dist.Normal(z + lr * prec * error,
                                (2 * lr * beta * prec).sqrt())
