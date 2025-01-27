@@ -19,7 +19,7 @@
         "type": "MiniBouncingMnistDataModule",
         "args": {
             "data_dir": "data/apg_training",
-            "batch_size": 5
+            "batch_size": 32
         }
     },
     "lmodule": {
@@ -29,8 +29,8 @@
             "factor": 0.9,
             "lr": 1e-4,
             "num_particles": 10,
-            "num_sweeps": 5,
-            "patience": 100
+            "num_sweeps": 1,
+            "patience": 1000
         }
     },
     "logger": {
@@ -41,7 +41,7 @@
         "type": "Trainer",
         "args": {
           "default_root_dir": "saved/",
-          "devices": [7],
+          "devices": 1,
           "max_epochs": 1000,
           "min_epochs": 1
         }
