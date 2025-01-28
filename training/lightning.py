@@ -149,7 +149,10 @@ class LightningDcpc(L.LightningModule):
         self._lr = lr
         self._lrq = lrq
         self.graph = graph
-        self.metrics = {}
+        self.metrics = {
+            'ess': torchmetrics.aggregation.RunningMean(window=8),
+        }
+        self.metrics['ess'].update(num_particles)
         self.num_particles = num_particles
         self.num_sweeps = num_sweeps
         self.patience = patience
@@ -236,8 +239,14 @@ class LightningDcpc(L.LightningModule):
     def dcpc_step(self, data):
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             for _ in range(self.num_sweeps - 1):
-                graph(B=data.shape[0], lr=self.lrq, P=self.num_particles)
-            return graph(B=data.shape[0], lr=self.lrq, P=self.num_particles)
+                graph(B=data.shape[0], beta=self.temperature, lr=self.lrq,
+                      P=self.num_particles)
+            return graph(B=data.shape[0], beta=self.temperature, lr=self.lrq,
+                         P=self.num_particles)
+
+    @property
+    def temperature(self):
+        return self.metrics['ess'].compute().item() / self.num_particles
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx, reset_fid=False):
@@ -285,7 +294,9 @@ class LightningDcpc(L.LightningModule):
         loss = -utils.logmeanexp(log_weight, 0, False).mean()
         self._save_particles(indices, train=True)
 
-        self.log("train/ess", metric.ess(trace, log_weight.detach()))
+        ess = metric.ess(trace, log_weight.detach())
+        self.metrics['ess'].update(ess)
+        self.log("train/ess", ess)
         self.log("train/log_joint", metric.log_joint(trace,
                                                      log_weight.detach()))
         self.log("train/log_marginal", metric.log_marginal(trace,
@@ -300,8 +311,9 @@ class LightningDcpc(L.LightningModule):
         loss = -utils.logmeanexp(log_weight, 0, False).mean()
         self._save_particles(indices, train=False)
 
-        self.log("valid/ess", metric.ess(trace, log_weight.detach()),
-                 sync_dist=True)
+        ess = metric.ess(trace, log_weight.detach())
+        self.metrics['ess'].update(ess)
+        self.log("valid/ess", ess, sync_dist=True)
         self.log("valid/log_joint", metric.log_joint(trace,
                                                      log_weight.detach()),
                  sync_dist=True)

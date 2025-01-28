@@ -82,7 +82,7 @@ class MnistDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(IndexedDataset(self.mnist_train), num_workers=2,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.mnist_val), num_workers=2,
@@ -120,7 +120,7 @@ class EMnistDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(IndexedDataset(self.emnist_train), num_workers=2,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.emnist_val), num_workers=2,
@@ -160,7 +160,7 @@ class FashionMnistDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(IndexedDataset(self.fashionmnist_train), num_workers=2,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.fashionmnist_val), num_workers=2,
@@ -180,7 +180,8 @@ class BouncingMnistDataModule(L.LightningDataModule):
         ])
 
     def setup(self, stage=None):
-        bouncingmnist_full = self._dataset(self.data_dir, transform=self.transform)
+        bouncingmnist_full = self._dataset(self.data_dir,
+                                           transform=self.transform)
         train_length = int(0.9 * len(bouncingmnist_full))
         valid_length = len(bouncingmnist_full) - train_length
         self.bmnist_train, self.bmnist_val = random_split(
@@ -189,7 +190,7 @@ class BouncingMnistDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(IndexedDataset(self.bmnist_train), num_workers=2,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.bmnist_val), num_workers=2,
@@ -240,7 +241,7 @@ class CelebADataModule(L.LightningDataModule):
                           batch_size=self.batch_size, pin_memory=True)
 
     def train_dataloader(self):
-        return DataLoader(IndexedDataset(self.celeba_train),
+        return DataLoader(IndexedDataset(self.celeba_train), shuffle=True,
                           num_workers=self.num_workers,
                           batch_size=self.batch_size, pin_memory=True)
 
@@ -295,7 +296,7 @@ class Flowers102DataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(IndexedDataset(self.flowers102_train), num_workers=2,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.flowers102_val), num_workers=2,
@@ -342,7 +343,7 @@ class CifarMemoryDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(IndexedDataset(self.train_sequences), num_workers=2,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, shuffle=True)
 
     def val_dataloader(self):
         return self.train_dataloader()
