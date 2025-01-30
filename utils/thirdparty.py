@@ -6,8 +6,49 @@ import pandas as pd
 from pathlib import Path
 import pyro
 import torch
+from torch.distributions import constraints
+from torch.distributions.utils import broadcast_all
 from torch import nn
 import torch.nn.functional as F
+
+class BarkerProposal(pyro.distributions.TorchDistribution):
+    arg_constraints = {"loc": constraints.real, "drift": constraints.real,
+                       "scale": constraints.positive}
+    support = constraints.real
+    has_rsample = False
+
+    def __init__(self, loc, drift, scale, *, validate_args=None):
+        self.loc, self.drift, self.scale = broadcast_all(loc, drift, scale)
+        probs = torch.ones(2, device=scale.device).expand(*self.scale.shape, 2)
+        self.noise = pyro.distributions.MixtureSameFamily(
+            pyro.distributions.Categorical(probs),
+            pyro.distributions.Normal(
+                torch.stack((-self.scale, self.scale), dim=-1),
+                0.1 * torch.stack((self.scale, self.scale), dim=-1),
+            )
+        ).to_event(1)
+        super().__init__(batch_shape=self.noise.batch_shape,
+                         event_shape=self.noise.event_shape,
+                         validate_args=validate_args)
+
+    def log_prob(self, value):
+        r"""
+        Equation (1) of "Robust Approximate Sampling with Stochastic Gradient
+        Barker Dynamics" by Mauri and Zanella (AISTATS 2024).
+        .. math::
+            q(\theta + w \mid \theta) = 2 p(\nabla \log \pi(\theta), w) \mu_{\sigma}(w)
+        """
+        if self._validate_args:
+            self._validate_sample(value)
+        noise = value - self.loc
+        log_p = F.logsigmoid(self.drift * noise).sum(len(self.batch_shape))
+        return math.log(2) + log_p + self.noise.log_prob(noise)
+
+    def sample(self, sample_shape=torch.Size()):
+        noise = self.noise.sample(sample_shape)
+        flips = torch.bernoulli(F.sigmoid(self.drift * noise))
+        noise = torch.where(flips == 1., noise, -noise)
+        return self.loc + noise
 
 class Deterministic(nn.Module):
     """
