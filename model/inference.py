@@ -22,6 +22,7 @@ from pyro.poutine.util import site_is_subsample
 from base import BaseModel
 from .generative import GraphicalModel
 import utils
+from utils.thirdparty import BarkerProposal
 
 def systematic_resample(log_weights):
     P, B = log_weights.shape
@@ -153,8 +154,8 @@ class DcpcGraphicalModel(GraphicalModel):
         prec = 1 / (error.var(dim=0, keepdim=True) + 1 / error.shape[0])
         prec = prec / prec.mean(dim=(-2, -1), keepdim=True)
 
-        proposal = dist.Normal(z + lr * prec * error, (2 * lr * prec).sqrt())
-        proposal = proposal.to_event(event_dim)
+        proposal = BarkerProposal(z, prec * error, 2 * (lr * prec).sqrt())
+        proposal = proposal.to_event(event_dim - 1)
         if self.nodes[name]['support']:
             proposal = dist.TransformedDistribution(proposal, [bijector])
         z_next = proposal.sample()
