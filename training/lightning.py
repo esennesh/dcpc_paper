@@ -261,6 +261,7 @@ class LightningDcpc(L.LightningModule):
         metrics = {
             "ess": metric.ess(trace, log_weight),
             "log_joint": metric.log_joint(trace, log_weight),
+            "log_likelihood": metric.log_likelihood(trace, log_weight),
             "log_marginal": metric.log_marginal(trace, log_weight),
             "loss": -utils.logmeanexp(log_weight, 0, False).mean()
         }
@@ -294,13 +295,13 @@ class LightningDcpc(L.LightningModule):
         loss = -utils.logmeanexp(log_weight, 0, False).mean()
         self._save_particles(indices, train=True)
 
-        ess = metric.ess(trace, log_weight.detach())
+        log_w = log_weight.detach()
+        ess = metric.ess(trace, log_w)
         self.metrics['ess'].update(ess)
         self.log("train/ess", ess)
-        self.log("train/log_joint", metric.log_joint(trace,
-                                                     log_weight.detach()))
-        self.log("train/log_marginal", metric.log_marginal(trace,
-                                                           log_weight.detach()))
+        self.log("train/log_joint", metric.log_joint(trace, log_w))
+        self.log("train/log_likelihood", metric.log_likelihood(trace, log_w))
+        self.log("train/log_marginal", metric.log_marginal(trace, log_w))
         self.log("train/loss", loss)
         return loss * self._num_train
 
@@ -311,14 +312,15 @@ class LightningDcpc(L.LightningModule):
         loss = -utils.logmeanexp(log_weight, 0, False).mean()
         self._save_particles(indices, train=False)
 
-        ess = metric.ess(trace, log_weight.detach())
+        log_w = log_weight.detach()
+        ess = metric.ess(trace, log_w)
         self.metrics['ess'].update(ess)
         self.log("valid/ess", ess, sync_dist=True)
-        self.log("valid/log_joint", metric.log_joint(trace,
-                                                     log_weight.detach()),
+        self.log("valid/log_joint", metric.log_joint(trace, log_w),
                  sync_dist=True)
-        self.log("valid/log_marginal", metric.log_marginal(trace,
-                                                           log_weight.detach()),
+        self.log("valid/log_likelihood", metric.log_likelihood(trace, log_w),
+                 sync_dist=True)
+        self.log("valid/log_marginal", metric.log_marginal(trace, log_w),
                  sync_dist=True)
         self.log("valid/loss", loss, sync_dist=True)
         return loss

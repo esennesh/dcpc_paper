@@ -7,6 +7,9 @@ def ess(trace, log_weight):
               torch.logsumexp(2 * log_weight, dim=0)
     return torch.exp(log_ess).mean().item()
 
+def log_likelihood(trace, log_weight):
+    return utils.log_likelihood(trace).mean().item()
+
 def log_marginal(trace, log_weight):
     return utils.logmeanexp(log_weight, 0, False).mean().item()
 
