@@ -210,8 +210,9 @@ class LightningDcpc(L.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.graph.parameters(), amsgrad=True,
                                      lr=self.lr, weight_decay=0.)
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, self.patience, eta_min=1e-6,
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, cooldown=self.cooldown, factor=self.factor,
+            patience=self.patience
         )
         return {"lr_scheduler": lr_scheduler, "monitor": "valid/loss",
                 "optimizer": optimizer}
