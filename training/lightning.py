@@ -240,14 +240,8 @@ class LightningDcpc(L.LightningModule):
     def dcpc_step(self, data):
         with self.graph.condition(**self.graph.conditioner(data)) as graph:
             for _ in range(self.num_sweeps - 1):
-                graph(B=data.shape[0], beta=self.temperature, lr=self.lrq,
-                      P=self.num_particles)
-            return graph(B=data.shape[0], beta=self.temperature, lr=self.lrq,
-                         P=self.num_particles)
-
-    @property
-    def temperature(self):
-        return self.metrics['ess'].compute().item() / self.num_particles
+                graph(B=data.shape[0], lr=self.lrq, P=self.num_particles)
+            return graph(B=data.shape[0], lr=self.lrq, P=self.num_particles)
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx, reset_fid=False):
