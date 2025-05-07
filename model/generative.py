@@ -108,8 +108,8 @@ class DigitDecoder(MarkovKernel):
         self.batch_shape = ()
         self._digit_side = 28
         self.decoder = nn.Sequential(
-            nn.Linear(z_dim, hidden_dim // 2), nn.ReLU(),
-            nn.Linear(hidden_dim // 2, hidden_dim), nn.ReLU(),
+            nn.Linear(z_dim, hidden_dim // 2), nn.LeakyReLU(),
+            nn.Linear(hidden_dim // 2, hidden_dim), nn.LeakyReLU(),
             nn.Linear(hidden_dim, digit_side ** 2), nn.Sigmoid()
         )
 
