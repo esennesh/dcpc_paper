@@ -13,7 +13,11 @@ class IndexedDataset(torch.utils.data.Dataset):
         self._dataset = dataset
 
     def __getitem__(self, idx):
-        (data, target) = self._dataset[idx]
+        item = self._dataset[idx]
+        if len(item) == 2:
+            data, target = item
+        else:
+            data, target = item, np.array([0])
         return (data, target, np.array(idx))
 
     def __len__(self):
