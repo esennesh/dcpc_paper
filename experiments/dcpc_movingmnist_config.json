@@ -1,0 +1,51 @@
+{
+    "name": "MovingMnist_Dcpc",
+
+    "arch": {
+        "type": "BouncingMnistDcpc",
+        "args": {
+          "num_digits": 2
+        }
+    },
+    "checkpoint": {
+        "type": "ModelCheckpoint",
+        "args": {
+            "auto_insert_metric_name": false,
+            "every_n_epochs": 100,
+            "filename": "checkpoint_{epoch}",
+            "mode": "min",
+            "monitor": "valid/loss"
+        }
+    },
+    "data_module": {
+        "type": "MovingMnistDataModule",
+        "args": {
+            "data_dir": "data/",
+            "batch_size": 32
+        }
+    },
+    "lmodule": {
+        "type": "LightningDcpc",
+        "args": {
+            "cooldown": 50,
+            "factor": 0.9,
+            "lr": 1e-4,
+            "num_particles": 10,
+            "num_sweeps": 1,
+            "patience": 1000
+        }
+    },
+    "logger": {
+        "type": "TensorBoardLogger",
+        "args": {}
+    },
+    "trainer": {
+        "type": "Trainer",
+        "args": {
+          "default_root_dir": "saved/",
+          "devices": 1,
+          "max_epochs": 1000,
+          "min_epochs": 1
+        }
+    }
+}
