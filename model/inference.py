@@ -151,6 +151,7 @@ class DcpcGraphicalModel(GraphicalModel):
             z = bijector.inv(z)
         error = self._complete_conditional_error(name)
         prec = 1 / (error.var(dim=0, keepdim=True) + 1 / error.shape[0])
+        prec = prec / prec.mean(dim=(-2, -1), keepdim=True)
 
         proposal = dist.Normal(z + lr * prec * error, (2 * lr * prec).sqrt())
         proposal = proposal.to_event(event_dim)
