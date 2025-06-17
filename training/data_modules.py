@@ -176,7 +176,7 @@ class MovingMnistDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.data_dir = data_dir
         self.transform = transforms.Compose([
-            transforms.Lambda(lambda x: (x / 255).mT)
+            transforms.Lambda(lambda x: x / 255)
         ])
         self.dims = (20, 1, 64, 64)
 
