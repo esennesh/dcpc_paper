@@ -18,7 +18,7 @@
     "data_module": {
         "type": "MiniBouncingMnistDataModule",
         "args": {
-            "data_dir": "data/apg_training",
+            "data_dir": "data/",
             "batch_size": 32
         }
     },
