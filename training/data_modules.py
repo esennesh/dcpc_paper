@@ -13,7 +13,11 @@ class IndexedDataset(torch.utils.data.Dataset):
         self._dataset = dataset
 
     def __getitem__(self, idx):
-        (data, target) = self._dataset[idx]
+        item = self._dataset[idx]
+        if len(item) == 2:
+            data, target = item
+        else:
+            data, target = item, np.array([0])
         return (data, target, np.array(idx))
 
     def __len__(self):
@@ -164,6 +168,48 @@ class FashionMnistDataModule(L.LightningDataModule):
 
     def val_dataloader(self):
         return DataLoader(IndexedDataset(self.fashionmnist_val), num_workers=2,
+                          batch_size=self.batch_size)
+
+class MovingMnistDataModule(L.LightningDataModule):
+    def __init__(self, data_dir, batch_size):
+        super().__init__()
+        self.batch_size = batch_size
+        self.data_dir = data_dir
+        self.transform = transforms.Compose([
+            transforms.Lambda(lambda x: x / 255)
+        ])
+        self.dims = (20, 1, 64, 64)
+
+    def prepare_data(self):
+        datasets.MovingMNIST(self.data_dir, split="train", download=True)
+        datasets.MovingMNIST(self.data_dir, split="test", download=True)
+
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+            movingmnist_full = datasets.MovingMNIST(self.data_dir,
+                                                    split="train",
+                                                    transform=self.transform)
+            num_validation = int(0.1 * len(movingmnist_full))
+            num_training = len(movingmnist_full) - num_validation
+            self.movingmnist_train, self.movingmnist_val = random_split(
+                movingmnist_full, [num_training, num_validation]
+            )
+
+        if stage == "test" or stage is None:
+            self.movingmnist_test = datasets.MovingMNIST(
+                self.data_dir, split="test", transform=self.transform
+            )
+
+    def test_dataloader(self):
+        return DataLoader(IndexedDataset(self.movingmnist_test), num_workers=2,
+                          batch_size=self.batch_size)
+
+    def train_dataloader(self):
+        return DataLoader(IndexedDataset(self.movingmnist_train), num_workers=2,
+                          batch_size=self.batch_size, shuffle=True)
+
+    def val_dataloader(self):
+        return DataLoader(IndexedDataset(self.movingmnist_val), num_workers=2,
                           batch_size=self.batch_size)
 
 class BouncingMnistDataModule(L.LightningDataModule):

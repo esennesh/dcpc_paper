@@ -94,13 +94,14 @@ class DigitsDecoder(MarkovKernel):
 
     @property
     def event_dim(self):
-        return 2
+        return 3
 
     def forward(self, what, where, obs=None) -> dist.Distribution:
         P, B, K, _ = where.shape
         digits = self.decoder(what)
-        frames = soft_clamp(self.blit(digits, where).sum(dim=-3), 0., 1.)
-        return dist.ContinuousBernoulli(frames).to_event(2), None
+        frames = soft_clamp(self.blit(digits, where).sum(dim=-3, keepdims=True),
+                            0., 1.)
+        return dist.ContinuousBernoulli(frames).to_event(3), None
 
 class DigitDecoder(MarkovKernel):
     def __init__(self, digit_side=28, hidden_dim=400, z_dim=10):
